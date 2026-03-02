@@ -830,9 +830,10 @@ def _upgrade_legacy_tags(merged_parts: List[tuple]) -> tuple:
     Skips singleton markers and markers that already have explicit IDs.
     Derives IDs from TOML content per marker type.
 
-    Returns (updated_parts, upgraded_keys).
+    Returns (updated_parts, upgraded_keys, upgraded_details).
     """
     upgraded: List[str] = []
+    upgraded_details: Dict[str, tuple] = {}  # key → (old_tag, new_tag)
     last_heading_id = ""
     id_counts: Dict[str, int] = {}
     result: List[tuple] = []
@@ -896,9 +897,13 @@ def _upgrade_legacy_tags(merged_parts: List[tuple]) -> tuple:
 
         if new_raw != raw:
             upgraded.append(key)
+            upgraded_details[key] = (
+                f"@cpt:{marker_type}",
+                f"@cpt:{marker_type}:{final_id}",
+            )
         result.append((new_raw, key))
 
-    return result, upgraded
+    return result, upgraded, upgraded_details
 
 
 def _normalize_legacy_to_named(text: str, reference_text: str = "") -> str:
@@ -973,7 +978,7 @@ def _prompt_confirm(message: str, state: Dict[str, bool]) -> str:
     """
     if state.get("all"):
         return "y"
-    sys.stderr.write(f"{message} [y/N/all] ")
+    sys.stderr.write(f"{message} [y/N/all (approve remaining files)] ")
     sys.stderr.flush()
     try:
         response = input().strip().lower()
@@ -1206,7 +1211,7 @@ def _three_way_merge_blueprint(
 
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-legacy
     # Upgrade legacy markers to named syntax in the merged output
-    merged_parts, upgraded = _upgrade_legacy_tags(merged_parts)
+    merged_parts, upgraded, upgraded_details = _upgrade_legacy_tags(merged_parts)
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-legacy
 
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p1:inst-return-merge
@@ -1222,7 +1227,7 @@ def _three_way_merge_blueprint(
         "ref_removed_details": ref_removed_details,
         "removed": [k for k in ref_removed if k in remove_keys],
         "kept": kept, "inserted": inserted,
-        "upgraded": upgraded,
+        "upgraded": upgraded, "upgraded_details": upgraded_details,
     }
     return merged_text, report
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p1:inst-return-merge
@@ -1512,7 +1517,12 @@ def migrate_kit(
                 sys.stderr.write(f"\n  [{kit_slug}] {bp_name}:\n")
 
                 if text_changed and not report["updated"] and not report.get("inserted"):
-                    sys.stderr.write("    syntax upgrade (legacy → named markers)\n")
+                    sys.stderr.write("    syntax upgrade (legacy → named markers):\n")
+                upg_details = report.get("upgraded_details", {})
+                for k in report.get("upgraded", []):
+                    if k in upg_details:
+                        old_tag, new_tag = upg_details[k]
+                        sys.stderr.write(f"      {old_tag} → {new_tag}\n")
                 for k in report["updated"]:
                     sys.stderr.write(f"    ✎ {k} — updated from reference\n")
                     if k in upd_details:
@@ -1530,8 +1540,11 @@ def migrate_kit(
                     sys.stderr.write(f"    ≡ {k} — customized by you\n")
                     if k in skip_details:
                         _show_marker_diff(k, *skip_details[k])
+                del_details = report.get("deleted_details", {})
                 for k in report.get("deleted", []):
                     sys.stderr.write(f"    ✗ {k} — deleted by you (exists in reference)\n")
+                    if k in del_details:
+                        _show_marker_content(del_details[k], color="red")
                 ref_rem_details = report.get("ref_removed_details", {})
                 for k in report.get("ref_removed", []):
                     sys.stderr.write(f"    − {k} — removed from reference (will be deleted from config)\n")

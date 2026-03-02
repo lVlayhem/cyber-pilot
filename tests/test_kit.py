@@ -1392,16 +1392,17 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:heading`\n```toml\nid = "prd-title"\nlevel = 1\n```\n`@/cpt:heading`\n'
         parts = [(raw, "heading#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 1)
         self.assertIn("`@cpt:heading:prd-title`", result[0][0])
         self.assertIn("`@/cpt:heading:prd-title`", result[0][0])
+        self.assertEqual(upg_details["heading#0"], ("@cpt:heading", "@cpt:heading:prd-title"))
 
     def test_skips_singleton(self):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:blueprint`\n```toml\nkit = "sdlc"\n```\n`@/cpt:blueprint`\n'
         parts = [(raw, "blueprint#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 0)
         self.assertEqual(result[0][0], raw)
 
@@ -1409,14 +1410,14 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:rule:prereq-load`\ncontent\n`@/cpt:rule:prereq-load`\n'
         parts = [(raw, "rule:prereq-load")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 0)
         self.assertEqual(result[0][0], raw)
 
     def test_skips_text_segments(self):
         from cypilot.commands.kit import _upgrade_legacy_tags
         parts = [("plain text\n", None)]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 0)
         self.assertEqual(result[0][0], "plain text\n")
 
@@ -1424,7 +1425,7 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:heading`\n```toml\nlevel = 1\n```\n`@/cpt:heading`\n'
         parts = [(raw, "heading:L1#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 0)
 
     def test_disambiguates_duplicates(self):
@@ -1432,7 +1433,7 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         raw1 = '`@cpt:rule`\n```toml\nkind = "req"\nsection = "structural"\n```\n`@/cpt:rule`\n'
         raw2 = '`@cpt:rule`\n```toml\nkind = "req"\nsection = "structural"\n```\n`@/cpt:rule`\n'
         parts = [(raw1, "rule#0"), (raw2, "rule#1")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 2)
         self.assertIn("`@cpt:rule:req-structural`", result[0][0])
         self.assertIn("`@cpt:rule:req-structural-1`", result[1][0])
@@ -1442,7 +1443,7 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         h_raw = '`@cpt:heading`\n```toml\nid = "overview"\nlevel = 1\n```\n`@/cpt:heading`\n'
         p_raw = '`@cpt:prompt`\ncontent\n`@/cpt:prompt`\n'
         parts = [(h_raw, "heading:overview#0"), (p_raw, "prompt#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertIn("`@cpt:prompt:overview`", result[1][0])
 
     def test_tracks_heading_id_from_named_marker(self):
@@ -1450,14 +1451,14 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         h_raw = '`@cpt:heading:intro`\ncontent\n`@/cpt:heading:intro`\n'
         p_raw = '`@cpt:prompt`\ncontent\n`@/cpt:prompt`\n'
         parts = [(h_raw, "heading:intro"), (p_raw, "prompt#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertIn("`@cpt:prompt:intro`", result[1][0])
 
     def test_upgrades_workflow(self):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:workflow`\n```toml\nname = "pr-review"\n```\n`@/cpt:workflow`\n'
         parts = [(raw, "workflow:pr-review#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 1)
         self.assertIn("`@cpt:workflow:pr-review`", result[0][0])
 
@@ -1465,7 +1466,7 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:check`\n```toml\nid = "BIZ-001"\n```\n`@/cpt:check`\n'
         parts = [(raw, "check#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 1)
         self.assertIn("`@cpt:check:biz-001`", result[0][0])
 
@@ -1473,7 +1474,7 @@ class TestUpgradeLegacyTags(unittest.TestCase):
         from cypilot.commands.kit import _upgrade_legacy_tags
         raw = '`@cpt:id`\n```toml\nkind = "fr"\n```\n`@/cpt:id`\n'
         parts = [(raw, "id:fr#0")]
-        result, upgraded = _upgrade_legacy_tags(parts)
+        result, upgraded, _upg_details = _upgrade_legacy_tags(parts)
         self.assertEqual(len(upgraded), 1)
         self.assertIn("`@cpt:id:fr`", result[0][0])
 
