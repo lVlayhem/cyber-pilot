@@ -664,6 +664,14 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         with patch("builtins.input", side_effect=EOFError), redirect_stderr(err):
             self.assertFalse(_show_core_whatsnew(ref, {}, interactive=True))
 
+    def test_non_interactive_auto_continues(self):
+        """Non-interactive mode (CI/non-TTY) must auto-continue without blocking."""
+        from cypilot.commands.update import _show_core_whatsnew
+        ref = {"v1": {"summary": "X", "details": ""}}
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertTrue(_show_core_whatsnew(ref, {}, interactive=False))
+
 
 class TestCmdUpdateWhatsnew(unittest.TestCase):
     """Integration tests for core whatsnew in cmd_update pipeline."""
@@ -753,12 +761,14 @@ class TestCmdUpdateWhatsnew(unittest.TestCase):
             cwd = os.getcwd()
             try:
                 os.chdir(str(root))
-                with patch("cypilot.commands.update.CACHE_DIR", cache):
-                    with patch("builtins.input", return_value="q"):
-                        buf = io.StringIO()
-                        err = io.StringIO()
-                        with redirect_stdout(buf), redirect_stderr(err):
-                            rc = cmd_update([])
+                with patch("cypilot.commands.update.CACHE_DIR", cache), \
+                     patch("builtins.input", return_value="q"), \
+                     patch("sys.stdin") as mock_stdin:
+                    mock_stdin.isatty.return_value = True
+                    buf = io.StringIO()
+                    err = io.StringIO()
+                    with redirect_stdout(buf), redirect_stderr(err):
+                        rc = cmd_update([])
                 self.assertEqual(rc, 0)
                 out = json.loads(buf.getvalue())
                 self.assertEqual(out["status"], "ABORTED")

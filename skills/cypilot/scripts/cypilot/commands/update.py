@@ -116,7 +116,7 @@ def cmd_update(argv: List[str]) -> int:
         if cache_whatsnew:
             ack = _show_core_whatsnew(
                 cache_whatsnew, core_whatsnew,
-                interactive=not args.no_interactive and not args.yes,
+                interactive=not args.no_interactive and not args.yes and sys.stdin.isatty(),
             )
             if not ack:
                 print(json.dumps({"status": "ABORTED", "message": "Update aborted by user."}, indent=2))
@@ -162,7 +162,7 @@ def cmd_update(argv: List[str]) -> int:
                 kit_r = update_kit(
                     kit_slug, kit_src, cypilot_dir,
                     dry_run=args.dry_run,
-                    interactive=not args.no_interactive,
+                    interactive=not args.no_interactive and sys.stdin.isatty(),
                     auto_approve=args.yes,
                 )
             except Exception as exc:

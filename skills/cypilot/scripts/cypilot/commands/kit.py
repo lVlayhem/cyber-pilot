@@ -1747,8 +1747,8 @@ def migrate_kit(
             config_kit_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ref_conf_file, user_conf_file)
 
-    # Clean up .prev/ after successful migration
-    if not dry_run:
+    # Clean up .prev/ after successful migration (keep if all declined — needed for retry)
+    if not dry_run and not all_declined:
         prev_dir = ref_dir / ".prev"
         if prev_dir.is_dir():
             shutil.rmtree(prev_dir)
@@ -1824,10 +1824,11 @@ def cmd_kit_migrate(argv: List[str]) -> int:
     for kit_dir in kit_dirs:
         kit_slug = kit_dir.name
         config_kit_dir = config_dir / "kits" / kit_slug
+        interactive = not args.no_interactive and sys.stdin.isatty()
         result = migrate_kit(
             kit_slug, kit_dir, config_kit_dir,
             dry_run=args.dry_run,
-            interactive=not args.no_interactive,
+            interactive=interactive,
             auto_approve=args.yes,
         )
         # Regenerate .gen/ after successful migration

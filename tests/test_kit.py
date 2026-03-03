@@ -950,6 +950,17 @@ class TestMigrateKit(unittest.TestCase):
                 data = tomllib.load(f)
             self.assertEqual(data["version"], 1, "conf.toml version should NOT be bumped when all declined")
 
+    def test_declined_preserves_prev(self):
+        """Declining all changes must preserve .prev/ for three-way merge on retry."""
+        from cypilot.commands.kit import migrate_kit
+        from unittest.mock import patch
+        with TemporaryDirectory() as td:
+            _, _, ref_dir, config_kit, _ = self._setup_kit(Path(td))
+            with patch("builtins.input", return_value="n"):
+                migrate_kit("sdlc", ref_dir, config_kit, interactive=True)
+            self.assertTrue((ref_dir / ".prev").is_dir(),
+                            ".prev/ should be preserved when all declined")
+
     def test_interactive_all_auto_approves(self):
         """Interactive mode: user says 'all' → all files auto-approved."""
         from cypilot.commands.kit import migrate_kit
@@ -1757,6 +1768,15 @@ class TestPromptConfirm(unittest.TestCase):
         from cypilot.commands.kit import _prompt_confirm
         from unittest.mock import patch
         state: dict = {}
+        with patch("builtins.input", side_effect=EOFError):
+            self.assertEqual(_prompt_confirm("Apply?", state), "n")
+
+    def test_non_tty_eof_returns_no(self):
+        """Non-TTY stdin (CI) triggers EOFError on input() → returns 'n'."""
+        from cypilot.commands.kit import _prompt_confirm
+        from unittest.mock import patch
+        state: dict = {}
+        # In CI/non-TTY, input() raises EOFError — verify safe fallback
         with patch("builtins.input", side_effect=EOFError):
             self.assertEqual(_prompt_confirm("Apply?", state), "n")
 
