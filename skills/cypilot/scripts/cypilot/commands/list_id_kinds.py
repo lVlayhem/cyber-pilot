@@ -159,7 +159,7 @@ def cmd_list_id_kinds(argv: List[str]) -> int:
             "artifact_type": artifact_type,
             "kinds": kinds_in_artifact,
             "kind_counts": {k: kind_counts.get(k, 0) for k in kinds_in_artifact},
-        })
+        }, human_fn=lambda d: _human_list_id_kinds(d))
     else:
         ui.result({
             "kinds": all_kinds,
@@ -167,6 +167,49 @@ def cmd_list_id_kinds(argv: List[str]) -> int:
             "kind_to_templates": {k: sorted(v) for k, v in sorted(kind_to_templates.items())},
             "template_to_kinds": {k: sorted(v) for k, v in sorted(template_to_kinds.items())},
             "artifacts_scanned": len(artifacts_to_scan),
-        })
+        }, human_fn=lambda d: _human_list_id_kinds(d))
     # @cpt-end:cpt-cypilot-algo-traceability-validation-list-id-kinds:p1:inst-kinds-return
     return 0
+
+
+def _human_list_id_kinds(data: dict) -> None:
+    ui.header("ID Kinds")
+
+    artifact = data.get("artifact")
+    if artifact:
+        ui.detail("Artifact", str(artifact))
+        ui.detail("Type", str(data.get("artifact_type", "?")))
+    else:
+        ui.detail("Artifacts scanned", str(data.get("artifacts_scanned", 0)))
+
+    kinds = data.get("kinds", [])
+    counts = data.get("kind_counts", {})
+
+    if not kinds:
+        ui.blank()
+        ui.info("No ID kinds found.")
+        ui.blank()
+        return
+
+    ui.blank()
+
+    # Table: Kind | Count | Artifact types
+    k2t = data.get("kind_to_templates", {})
+    rows = []
+    for k in kinds:
+        c = str(counts.get(k, 0))
+        templates = ", ".join(k2t.get(k, [])) if k2t else ""
+        rows.append([k, c, templates] if templates else [k, c])
+
+    headers = ["Kind", "Count", "Artifact types"] if k2t else ["Kind", "Count"]
+    ui.table(headers, rows)
+
+    # Reverse mapping: artifact type → kinds
+    t2k = data.get("template_to_kinds", {})
+    if t2k:
+        ui.blank()
+        ui.step("By artifact type:")
+        for tpl, tpl_kinds in sorted(t2k.items()):
+            ui.substep(f"  {tpl}: {', '.join(tpl_kinds)}")
+
+    ui.blank()

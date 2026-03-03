@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -42,7 +43,7 @@ def cmd_get_content(argv: List[str]) -> int:
             ui.result({"status": "NOT_FOUND", "id": args.id, "inst": args.inst})
             return 2
 
-        ui.result({"status": "FOUND", "id": args.id, "inst": args.inst, "text": content})
+        ui.result({"status": "FOUND", "id": args.id, "inst": args.inst, "text": content}, human_fn=lambda d: _human_get_content(d))
         return 0
 
     # Handle artifact path
@@ -95,6 +96,62 @@ def cmd_get_content(argv: List[str]) -> int:
         "kind": artifact_meta.kind,
         "system": system.name,
         "traceability": artifact_meta.traceability,
-    })
+    }, human_fn=lambda d: _human_get_content(d))
     # @cpt-end:cpt-cypilot-flow-traceability-validation-query:p1:inst-if-get-content
     return 0
+
+
+def _human_get_content(data: dict) -> None:
+    status = data.get("status", "")
+    cid = data.get("id", "?")
+
+    ui.header("Get Content")
+    ui.detail("ID", cid)
+
+    if status in ("NOT_FOUND",):
+        inst = data.get("inst")
+        if inst:
+            ui.detail("Inst", inst)
+        ui.blank()
+        ui.warn("Content not found.")
+        ui.blank()
+        return
+
+    if status in ("ERROR",):
+        ui.error(data.get("message", "Unknown error"))
+        ui.blank()
+        return
+
+    artifact = data.get("artifact")
+    if artifact:
+        try:
+            artifact = os.path.relpath(str(artifact), os.getcwd())
+        except ValueError:
+            pass
+        ui.detail("Artifact", str(artifact))
+    kind = data.get("kind")
+    if kind:
+        ui.detail("Kind", str(kind))
+    system = data.get("system")
+    if system:
+        ui.detail("System", str(system))
+    start = data.get("start_line")
+    end = data.get("end_line")
+    if start is not None and end is not None:
+        ui.detail("Lines", f"{start}-{end}")
+    traceability = data.get("traceability")
+    if traceability:
+        ui.detail("Traceability", str(traceability))
+    inst = data.get("inst")
+    if inst:
+        ui.detail("Inst", inst)
+
+    text = data.get("text", "")
+    if text:
+        ui.blank()
+        ui.divider()
+        for line in text.splitlines():
+            ui.info(line)
+        ui.divider()
+
+    ui.blank()

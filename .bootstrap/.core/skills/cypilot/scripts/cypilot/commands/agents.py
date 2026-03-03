@@ -616,7 +616,7 @@ def _process_single_agent(
                 if isinstance(rel_path, str) and rel_path.strip():
                     skill_output_paths.add((project_root / rel_path).resolve().as_posix())
 
-    workflows_result: Dict[str, Any] = {"created": [], "updated": [], "renamed": [], "deleted": [], "errors": []}
+    workflows_result: Dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "renamed": [], "deleted": [], "errors": []}
 
     if isinstance(workflows_cfg, dict) and workflows_cfg:
         workflow_dir_rel = workflows_cfg.get("workflow_dir")
@@ -730,6 +730,8 @@ def _process_single_agent(
                     workflows_result["updated"].append(p_str)
                     if not dry_run:
                         pth.write_text(meta["content"], encoding="utf-8")
+                else:
+                    workflows_result["unchanged"].append(p_str)
 
             desired_paths = set(desired.keys())
             for pth in existing_files:
@@ -881,11 +883,13 @@ def _process_single_agent(
         "workflows": {
             "created": workflows_result["created"],
             "updated": workflows_result["updated"],
+            "unchanged": workflows_result["unchanged"],
             "renamed": workflows_result["renamed"],
             "deleted": workflows_result["deleted"],
             "counts": {
                 "created": len(workflows_result["created"]),
                 "updated": len(workflows_result["updated"]),
+                "unchanged": len(workflows_result["unchanged"]),
                 "renamed": len(workflows_result["renamed"]),
                 "deleted": len(workflows_result["deleted"]),
             },
@@ -1030,8 +1034,12 @@ def cmd_generate_agents(argv: List[str]) -> int:
     # @cpt-end:cpt-cypilot-flow-agent-integration-generate:p1:inst-user-agents
 
     # @cpt-begin:cpt-cypilot-flow-agent-integration-generate:p1:inst-resolve-project
+    # Resolved in _resolve_agents_context: project_root via find_project_root,
+    # cypilot_root via AGENTS.md cypilot_path variable or __file__ ancestry.
     # @cpt-end:cpt-cypilot-flow-agent-integration-generate:p1:inst-resolve-project
     # @cpt-begin:cpt-cypilot-flow-agent-integration-generate:p1:inst-ensure-local
+    # Handled in _resolve_agents_context via _ensure_cypilot_local:
+    # copies cypilot files into project when cypilot_root is external.
     # @cpt-end:cpt-cypilot-flow-agent-integration-generate:p1:inst-ensure-local
 
     # Step 1: Dry run to preview changes
@@ -1131,8 +1139,11 @@ def _human_agents_list(
     for agent_name, r in results.items():
         wf = r.get("workflows", {})
         sk = r.get("skills", {})
-        existing_wf = wf.get("updated", [])  # in dry-run, "updated" means existing files
-        existing_sk = sk.get("updated", [])
+        existing_wf = wf.get("updated", []) + wf.get("unchanged", [])
+        existing_sk = list(sk.get("updated", []))
+        for o in sk.get("outputs", []):
+            if o.get("action") == "unchanged":
+                existing_sk.append(o.get("path", ""))
         created_wf = wf.get("created", [])
         created_sk = sk.get("created", [])
 
@@ -1143,7 +1154,7 @@ def _human_agents_list(
             any_files = True
             ui.step(f"{agent_name}: {total_existing} file(s) installed")
             for path in existing_wf + existing_sk:
-                ui.substep(f"  {path}")
+                ui.substep(f"  {_safe_relpath(Path(path), project_root)}")
         elif total_missing > 0:
             ui.step(f"{agent_name}: not configured ({total_missing} file(s) available)")
         else:

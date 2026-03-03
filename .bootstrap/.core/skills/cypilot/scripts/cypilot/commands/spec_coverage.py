@@ -152,8 +152,31 @@ def _human_spec_coverage(data: dict) -> None:
     ui.detail("Files", f"{summary.get('covered_files', 0)}/{summary.get('total_files', 0)} covered")
     ui.detail("Coverage", f"{summary.get('coverage_pct', 0):.1f}%")
     ui.detail("Granularity", f"{summary.get('granularity_score', 0):.4f}")
+
+    # Per-file details — files is a dict {path: entry_dict}
+    files = data.get("files", {})
+    if files and isinstance(files, dict):
+        ui.blank()
+        covered = {p: e for p, e in files.items() if e.get("covered_lines", 0) > 0}
+        uncovered = {p: e for p, e in files.items() if e.get("covered_lines", 0) == 0}
+
+        if covered:
+            ui.step(f"Covered files ({len(covered)})")
+            for path, e in covered.items():
+                lines = e.get("total_lines", 0)
+                cov = e.get("coverage_pct", 0)
+                ui.substep(f"  {path}  {cov:.0f}% ({lines} lines)")
+
+        if uncovered:
+            ui.blank()
+            ui.step(f"Uncovered files ({len(uncovered)})")
+            for path, e in uncovered.items():
+                lines = e.get("total_lines", 0)
+                ui.substep(f"  {path}  ({lines} lines)")
+
     failures = data.get("threshold_failures", [])
     if failures:
+        ui.blank()
         for f in failures:
             ui.warn(f)
     if status == "PASS":

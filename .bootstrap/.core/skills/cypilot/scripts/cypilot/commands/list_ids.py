@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -226,6 +227,55 @@ def cmd_list_ids(argv: List[str]) -> int:
 
     # @cpt-end:cpt-cypilot-flow-traceability-validation-query:p1:inst-if-list
     # @cpt-begin:cpt-cypilot-flow-traceability-validation-query:p1:inst-return-query
-    ui.result(result)
+    ui.result(result, human_fn=lambda d: _human_list_ids(d))
     return 0
     # @cpt-end:cpt-cypilot-flow-traceability-validation-query:p1:inst-return-query
+
+
+def _human_list_ids(data: dict) -> None:
+    count = data.get("count", 0)
+    n_art = data.get("artifacts_scanned", 0)
+    code_scanned = data.get("code_files_scanned")
+
+    ui.header("List IDs")
+    ui.detail("Artifacts scanned", str(n_art))
+    if code_scanned is not None:
+        ui.detail("Code files scanned", str(code_scanned))
+    ui.detail("IDs found", str(count))
+
+    ids = data.get("ids", [])
+    if not ids:
+        ui.blank()
+        ui.info("No IDs found.")
+        ui.blank()
+        return
+
+    # Detect common project root for relative paths
+    cwd = os.getcwd()
+
+    def _rel(path: str) -> str:
+        try:
+            return os.path.relpath(path, cwd)
+        except ValueError:
+            return path
+
+    # Group by kind for readability
+    by_kind: Dict[str, List[Dict]] = {}
+    for h in ids:
+        k = str(h.get("kind") or "unknown")
+        by_kind.setdefault(k, []).append(h)
+
+    ui.blank()
+    for kind_name in sorted(by_kind.keys()):
+        items = by_kind[kind_name]
+        ui.step(f"{kind_name} ({len(items)})")
+        for h in items:
+            cid = h.get("id", "?")
+            htype = h.get("type", "")
+            line = h.get("line", "")
+            artifact = h.get("artifact", "")
+            loc = f":{line}" if line else ""
+            art_label = _rel(artifact) if artifact else ""
+            ui.substep(f"  {cid}  ({htype}, {art_label}{loc})")
+
+    ui.blank()

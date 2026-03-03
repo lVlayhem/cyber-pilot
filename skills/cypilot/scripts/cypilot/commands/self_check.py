@@ -586,20 +586,52 @@ def _human_self_check(data: dict) -> None:
     n_kits = data.get("kits_checked", 0)
     n_tpl = data.get("templates_checked", 0)
     ui.header("Self-Check")
+    ui.detail("Project root", str(data.get("project_root", "?")))
+    ui.detail("Cypilot dir", str(data.get("cypilot_dir", "?")))
     ui.detail("Kits checked", str(n_kits))
     ui.detail("Templates checked", str(n_tpl))
+    ui.blank()
+
     for r in data.get("results", []):
         kit = r.get("kit", "?")
         kind = r.get("kind", "?")
         rs = r.get("status", "?")
+        n_err = r.get("error_count", 0)
+        n_warn = r.get("warning_count", 0)
+        example = r.get("example_path")
+
         if rs == "PASS":
-            ui.substep(f"{kit}/{kind}: PASS")
+            suffix = ""
+            if n_warn:
+                suffix = f" ({n_warn} warning(s))"
+            ui.step(f"{kit}/{kind}: PASS{suffix}")
         else:
-            errs = r.get("error_count", 0)
-            ui.warn(f"{kit}/{kind}: {rs} ({errs} error(s))")
-            for e in r.get("errors", [])[:5]:
-                msg = e.get("message", "") if isinstance(e, dict) else str(e)
-                ui.substep(f"  {msg}")
+            ui.warn(f"{kit}/{kind}: {rs} — {n_err} error(s), {n_warn} warning(s)")
+
+        if example:
+            ui.substep(f"  Example: {example}")
+
+        shown_errs = r.get("errors", [])
+        for e in shown_errs[:20]:
+            msg = e.get("message", "") if isinstance(e, dict) else str(e)
+            path = e.get("path", "") if isinstance(e, dict) else ""
+            line = e.get("line", "") if isinstance(e, dict) else ""
+            loc = f"{path}:{line}" if path and line else (path or "")
+            if loc:
+                ui.substep(f"  ✗ {loc}  {msg}")
+            else:
+                ui.substep(f"  ✗ {msg}")
+        if len(shown_errs) > 20:
+            ui.substep(f"  ... and {len(shown_errs) - 20} more error(s)")
+
+        shown_warns = r.get("warnings", [])
+        for w in shown_warns[:10]:
+            msg = w.get("message", "") if isinstance(w, dict) else str(w)
+            ui.substep(f"  ⚠ {msg}")
+        if len(shown_warns) > 10:
+            ui.substep(f"  ... and {len(shown_warns) - 10} more warning(s)")
+
+    ui.blank()
     if status == "PASS":
         ui.success("All templates and examples are consistent.")
     else:

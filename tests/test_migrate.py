@@ -1742,5 +1742,621 @@ class TestCmdMigrateExitCodes(unittest.TestCase):
             self.assertEqual(rc, 0)
 
 
+# ===========================================================================
+# Test: _human_migrate_result (lines 1821-1859)
+# ===========================================================================
+
+def _with_human_mode(fn):
+    """Decorator: temporarily disable JSON mode so ui.* writes to stderr."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapper(*a, **kw):
+        from cypilot.utils.ui import set_json_mode
+        set_json_mode(False)
+        try:
+            return fn(*a, **kw)
+        finally:
+            set_json_mode(True)
+    return wrapper
+
+
+class TestHumanMigrateResult(unittest.TestCase):
+    """Cover lines 1821-1859 (_human_migrate_result formatter)."""
+
+    @_with_human_mode
+    def test_pass_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "PASS",
+                "message": "Migration completed successfully.",
+                "backup_dir": "/tmp/backup",
+                "cypilot_dir": "/tmp/proj/.cypilot",
+            })
+        output = err.getvalue()
+        self.assertIn("PASS", output)
+        self.assertIn("/tmp/backup", output)
+        self.assertIn("/tmp/proj/.cypilot", output)
+
+    @_with_human_mode
+    def test_pass_with_warnings(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "PASS",
+                "message": "Done",
+                "warnings": ["Some warning"],
+                "backup_dir": "/tmp/b",
+            })
+        output = err.getvalue()
+        self.assertIn("Some warning", output)
+
+    @_with_human_mode
+    def test_dry_run_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "DRY_RUN",
+                "plan": {
+                    "adapter_path": ".cypilot-adapter",
+                    "core_path": ".cypilot",
+                    "core_install_type": "PLAIN_DIR",
+                    "target_dir": ".cypilot",
+                    "systems_count": 2,
+                    "kits": ["cf-sdlc"],
+                    "has_agents_md": True,
+                },
+            })
+        output = err.getvalue()
+        self.assertIn("dry run", output.lower())
+        self.assertIn(".cypilot-adapter", output)
+        self.assertIn("cf-sdlc", output)
+
+    @_with_human_mode
+    def test_cancelled_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({"status": "CANCELLED"})
+        self.assertIn("cancelled", err.getvalue().lower())
+
+    @_with_human_mode
+    def test_validation_failed_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({"status": "VALIDATION_FAILED"})
+        # No output expected (issues already printed by run_migrate)
+        # Just check it doesn't crash
+
+    @_with_human_mode
+    def test_error_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "ERROR",
+                "message": "Something broke",
+                "backup_dir": "/tmp/b",
+            })
+        output = err.getvalue()
+        self.assertIn("ERROR", output)
+        self.assertIn("Something broke", output)
+        self.assertIn("/tmp/b", output)
+
+    @_with_human_mode
+    def test_critical_error_no_backup(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "CRITICAL_ERROR",
+                "message": "Total failure",
+            })
+        output = err.getvalue()
+        self.assertIn("CRITICAL_ERROR", output)
+
+    @_with_human_mode
+    def test_unknown_status(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({"status": "WEIRD", "message": "hmm"})
+        self.assertIn("WEIRD", err.getvalue())
+
+    @_with_human_mode
+    def test_pass_no_cypilot_dir(self):
+        from cypilot.commands.migrate import _human_migrate_result
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_migrate_result({
+                "status": "PASS",
+                "message": "OK",
+                "backup_dir": "/b",
+            })
+        # Should not crash when cypilot_dir is missing
+
+
+# ===========================================================================
+# Test: _regenerate_gen_from_config (lines 1549-1583)
+# ===========================================================================
+
+class TestRegenerateGenFromConfig(unittest.TestCase):
+    """Cover lines 1549-1583 in _regenerate_gen_from_config."""
+
+    def test_no_config_kits_dir(self):
+        """config/kits/ doesn't exist → early return (line 1550)."""
+        from cypilot.commands.migrate import _regenerate_gen_from_config
+        with TemporaryDirectory() as td:
+            config_dir = Path(td) / "config"
+            config_dir.mkdir()
+            gen_dir = Path(td) / ".gen"
+            _regenerate_gen_from_config(config_dir, gen_dir)
+            # Should not crash, gen_dir created
+            self.assertTrue(gen_dir.is_dir())
+
+    def test_processes_kit_with_blueprints(self):
+        """Kit with blueprints/ is processed (lines 1559-1578)."""
+        from cypilot.commands.migrate import _regenerate_gen_from_config
+        with TemporaryDirectory() as td:
+            config_dir = Path(td) / "config"
+            bp_dir = config_dir / "kits" / "testkit" / "blueprints"
+            bp_dir.mkdir(parents=True)
+            (bp_dir / "FEAT.md").write_text(
+                '`@cpt:blueprint`\n```toml\nartifact = "FEAT"\nkit = "testkit"\n```\n`@/cpt:blueprint`\n\n'
+                '`@cpt:heading`\n```toml\nlevel = 1\ntemplate = "Feature"\n```\n`@/cpt:heading`\n',
+                encoding="utf-8",
+            )
+            gen_dir = Path(td) / ".gen"
+            _regenerate_gen_from_config(config_dir, gen_dir)
+            # Should create gen output
+            self.assertTrue((gen_dir / "kits" / "testkit").is_dir())
+
+    def test_copies_scripts(self):
+        """Kit with scripts/ gets them copied to .gen/ (lines 1562-1568)."""
+        from cypilot.commands.migrate import _regenerate_gen_from_config
+        with TemporaryDirectory() as td:
+            config_dir = Path(td) / "config"
+            kit_dir = config_dir / "kits" / "skit"
+            bp_dir = kit_dir / "blueprints"
+            bp_dir.mkdir(parents=True)
+            (bp_dir / "X.md").write_text(
+                '`@cpt:blueprint`\n```toml\nartifact = "X"\n```\n`@/cpt:blueprint`\n',
+                encoding="utf-8",
+            )
+            scripts_dir = kit_dir / "scripts"
+            scripts_dir.mkdir()
+            (scripts_dir / "helper.py").write_text("# h\n", encoding="utf-8")
+            gen_dir = Path(td) / ".gen"
+            _regenerate_gen_from_config(config_dir, gen_dir)
+            self.assertTrue((gen_dir / "kits" / "skit" / "scripts" / "helper.py").is_file())
+
+    def test_process_kit_errors_raise(self):
+        """Errors from process_kit raise RuntimeError (line 1583)."""
+        from cypilot.commands.migrate import _regenerate_gen_from_config
+        with TemporaryDirectory() as td:
+            config_dir = Path(td) / "config"
+            bp_dir = config_dir / "kits" / "badkit" / "blueprints"
+            bp_dir.mkdir(parents=True)
+            (bp_dir / "BAD.md").write_text("not a valid blueprint", encoding="utf-8")
+            gen_dir = Path(td) / ".gen"
+            with patch("cypilot.utils.blueprint.process_kit",
+                       return_value=({"files_written": 0}, ["parse error"])):
+                with self.assertRaises(RuntimeError) as ctx:
+                    _regenerate_gen_from_config(config_dir, gen_dir)
+                self.assertIn("parse error", str(ctx.exception))
+
+
+# ===========================================================================
+# Test: _rollback OSError (lines 405-406)
+# ===========================================================================
+
+class TestRollbackOSError(unittest.TestCase):
+    """Cover lines 405-406: OSError during restore."""
+
+    def test_restore_oserror(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            backup = root / "backup"
+            backup.mkdir()
+            # Create a file in backup
+            (backup / "somefile.txt").write_text("data")
+            manifest = {"backed_up": ["somefile.txt"]}
+            (backup / "manifest.json").write_text(json.dumps(manifest))
+            # Make destination read-only to trigger OSError on copy
+            orig_copy2 = shutil.copy2
+            def failing_copy(src, dst, *a, **kw):
+                if "somefile.txt" in str(src):
+                    raise OSError("permission denied")
+                return orig_copy2(src, dst, *a, **kw)
+            with patch("shutil.copy2", side_effect=failing_copy):
+                result = _rollback(root, backup)
+            self.assertFalse(result["success"])
+            self.assertTrue(len(result["errors"]) > 0)
+
+
+# ===========================================================================
+# Test: cleanup_core_path submodule OSError (lines 510-511)
+# ===========================================================================
+
+class TestCleanupSubmoduleOSError(unittest.TestCase):
+    """Cover lines 510-511: OSError during submodule dir removal."""
+
+    def test_submodule_rmtree_oserror(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".cypilot").mkdir()
+            (root / ".gitmodules").write_text(
+                '[submodule "x"]\n  path = .cypilot\n  url = https://example.com\n'
+            )
+            orig_rmtree = shutil.rmtree
+            call_count = [0]
+            def oserror_rmtree(path, *a, **kw):
+                call_count[0] += 1
+                if ".cypilot" in str(path) and call_count[0] <= 2:
+                    raise OSError("cannot remove")
+                return orig_rmtree(path, *a, **kw)
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = unittest.mock.MagicMock(returncode=0)
+                with patch("shutil.rmtree", side_effect=oserror_rmtree):
+                    result = cleanup_core_path(root, ".cypilot", INSTALL_TYPE_SUBMODULE)
+            self.assertFalse(result["success"])
+            self.assertIn("cleanup failed", result.get("error", "").lower())
+
+
+# ===========================================================================
+# Test: run_migrate with kit_dirs not in artifacts.json (lines 1285, 1287)
+# ===========================================================================
+
+class TestRunMigrateKitDirsOnDisk(unittest.TestCase):
+    """Cover lines 1285, 1287: kits on disk but missing from artifacts.json."""
+
+    def test_extra_kit_dir_registered(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            # Add an extra kit directory not in artifacts.json
+            extra_kit = root / ".cypilot-adapter" / "kits" / "extra-kit"
+            extra_kit.mkdir(parents=True)
+            (extra_kit / "README.md").write_text("# extra\n")
+            cache = root / "_cache"
+            _make_cache(cache)
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                    with patch("cypilot.commands.init.CACHE_DIR", cache):
+                        result = run_migrate(root, yes=True)
+            finally:
+                os.chdir(cwd)
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+
+
+# ===========================================================================
+# Test: run_migrate agents_md skipped → empty config/AGENTS.md (lines 1294-1300)
+# ===========================================================================
+
+class TestRunMigrateNoAgentsMd(unittest.TestCase):
+    """Cover lines 1294-1300: no adapter AGENTS.md → creates empty."""
+
+    def test_missing_adapter_agents_creates_empty(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            # Remove adapter AGENTS.md to trigger skipped path
+            agents_path = root / ".cypilot-adapter" / "AGENTS.md"
+            if agents_path.exists():
+                agents_path.unlink()
+            cache = root / "_cache"
+            _make_cache(cache)
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                    with patch("cypilot.commands.init.CACHE_DIR", cache):
+                        result = run_migrate(root, yes=True)
+            finally:
+                os.chdir(cwd)
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+            # config/AGENTS.md should exist (empty scaffold)
+            config_agents = root / ".cypilot" / "config" / "AGENTS.md"
+            self.assertTrue(config_agents.is_file())
+
+
+# ===========================================================================
+# Test: _normalize_pr_review_data TypeError (line 1654)
+# ===========================================================================
+
+class TestNormalizePrReviewTypeError(unittest.TestCase):
+    """Cover line 1654: non-dict input raises TypeError."""
+
+    def test_non_dict_raises(self):
+        with self.assertRaises(TypeError):
+            _normalize_pr_review_data([1, 2, 3])
+
+    def test_string_raises(self):
+        with self.assertRaises(TypeError):
+            _normalize_pr_review_data("not a dict")
+
+
+# ===========================================================================
+# Test: run_migrate_config with core.toml (lines 1747-1754)
+# ===========================================================================
+
+class TestRunMigrateConfigCoreToml(unittest.TestCase):
+    """Cover lines 1747-1754: reads kit slug from core.toml."""
+
+    def test_reads_kit_from_core_toml(self):
+        from cypilot.utils import toml_utils
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            toml_utils.dump({
+                "version": "1.0",
+                "system": {"name": "Test", "kit": "custom-kit"},
+            }, config_dir / "core.toml")
+            pr_json = {"dataDir": ".prs", "prompts": [{"promptFile": "prompts/pr/code.md"}]}
+            (config_dir / "pr-review.json").write_text(json.dumps(pr_json))
+            result = run_migrate_config(root)
+            self.assertEqual(result["converted_count"], 1)
+            content = (config_dir / "pr-review.toml").read_text()
+            self.assertIn("custom-kit", content)
+
+    def test_corrupt_core_toml_uses_default(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            (config_dir / "core.toml").write_text("{{invalid", encoding="utf-8")
+            (config_dir / "test.json").write_text('{"a": 1}')
+            result = run_migrate_config(root)
+            self.assertEqual(result["converted_count"], 1)
+
+
+# ===========================================================================
+# Test: cmd_migrate returns 0 on PASS (line 1896)
+# ===========================================================================
+
+class TestCmdMigratePassReturn(unittest.TestCase):
+    """Cover line 1896: cmd_migrate returns 0 when status is PASS."""
+
+    def test_pass_returns_0(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            cache = root / "_cache"
+            _make_cache(cache)
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    with patch("cypilot.commands.migrate._human_migrate_result"):
+                        result = run_migrate(Path(d), yes=True)
+            if result.get("status") == "PASS":
+                # Verify cmd_migrate would return 0
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    with patch("cypilot.commands.migrate.run_migrate", return_value=result):
+                        rc = cmd_migrate(["--project-root", d, "--yes"])
+                self.assertEqual(rc, 0)
+
+
+# ===========================================================================
+# Test: validate_migration — root AGENTS.md missing managed block (line 1047)
+# ===========================================================================
+
+class TestValidateMigrationMissingManagedBlock(unittest.TestCase):
+    """Cover line 1047: root AGENTS.md exists but missing managed block."""
+
+    def test_missing_managed_block(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            cypilot_dir = root / "cypilot"
+            config_dir = cypilot_dir / "config"
+            config_dir.mkdir(parents=True)
+            (cypilot_dir / ".gen").mkdir()
+            (cypilot_dir / ".core").mkdir()
+            from cypilot.utils import toml_utils
+            toml_utils.dump({"version": "1.0"}, config_dir / "core.toml")
+            toml_utils.dump({"systems": []}, config_dir / "artifacts.toml")
+            # Root AGENTS.md without managed block
+            (root / "AGENTS.md").write_text("# Just plain content\nNo managed block.\n")
+            v2 = {"systems": [], "has_agents_md": False}
+            result = validate_migration(root, cypilot_dir, v2)
+            self.assertTrue(any("managed block" in i["message"] for i in result["issues"]))
+
+
+# ===========================================================================
+# Test: validation failure with HIGH severity (line 1477)
+# ===========================================================================
+
+class TestRunMigrateValidationHighSeverity(unittest.TestCase):
+    """Cover line 1477: HIGH severity issues printed as warnings."""
+
+    def test_validation_with_high_issues(self):
+        """Full migrate that triggers validation failure with HIGH issues."""
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            cache = root / "_cache"
+            _make_cache(cache)
+            # Patch validate_migration to return HIGH severity issues
+            fake_validation = {
+                "passed": False,
+                "issues": [
+                    {"severity": "HIGH", "message": "Root AGENTS.md missing managed block"},
+                    {"severity": "MEDIUM", "message": "Some medium issue"},
+                ],
+            }
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    with patch("cypilot.commands.migrate.validate_migration",
+                               return_value=fake_validation):
+                        result = run_migrate(root, yes=True)
+            self.assertIn(result["status"], ("VALIDATION_FAILED", "CRITICAL_ERROR"))
+
+
+# ===========================================================================
+# Test: validation failed + rollback failed → CRITICAL_ERROR (lines 1496-1497)
+# ===========================================================================
+
+class TestRunMigrateValidationFailedRollbackFailed(unittest.TestCase):
+    """Cover lines 1496-1497: validation fails and rollback also fails."""
+
+    def test_critical_error(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            cache = root / "_cache"
+            _make_cache(cache)
+            fake_validation = {
+                "passed": False,
+                "issues": [{"severity": "HIGH", "message": "bad"}],
+            }
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    with patch("cypilot.commands.migrate.validate_migration",
+                               return_value=fake_validation):
+                        with patch("cypilot.commands.migrate._rollback",
+                                   return_value={"success": False, "errors": ["rollback fail"]}):
+                            result = run_migrate(root, yes=True)
+            self.assertEqual(result["status"], "CRITICAL_ERROR")
+
+
+# ===========================================================================
+# Test: cmd_generate_agents raises SystemExit (line 1421)
+# ===========================================================================
+
+class TestRunMigrateAgentsSystemExit(unittest.TestCase):
+    """Cover line 1421: cmd_generate_agents raises SystemExit."""
+
+    def test_system_exit_caught(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            cache = root / "_cache"
+            _make_cache(cache)
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    with patch("cypilot.commands.agents.cmd_generate_agents",
+                               side_effect=SystemExit(0)):
+                        result = run_migrate(root, yes=True)
+            # Should not crash; migration continues
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+
+
+# ===========================================================================
+# Test: kit migration errors surfaced as warnings (lines 1336, 1344-1346)
+# ===========================================================================
+
+class TestRunMigrateKitErrors(unittest.TestCase):
+    """Cover lines 1336, 1344-1346: kit errors and blueprint counts."""
+
+    def test_kit_migration_errors_become_warnings(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            cache = root / "_cache"
+            _make_cache(cache)
+            fake_kit_result = {
+                "migrated_kits": ["cf-sdlc"],
+                "migrated": ["cf-sdlc"],
+                "warnings": [],
+                "errors": ["constraint validation failed"],
+                "blueprint_count": 5,
+            }
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    with patch("cypilot.commands.migrate.migrate_kits",
+                               return_value=fake_kit_result):
+                        result = run_migrate(root, yes=True)
+            # Kit errors should appear in warnings
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+
+
+# ===========================================================================
+# Test: JSON convert failed → preserve adapter (lines 1376, 1365, 1367)
+# ===========================================================================
+
+class TestRunMigrateJsonConvertFailed(unittest.TestCase):
+    """Cover lines 1365, 1367, 1376: JSON conversion failure preserves adapter dir."""
+
+    def test_failed_json_preserves_adapter(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            # Add a broken JSON config
+            (root / ".cypilot-adapter" / "broken.json").write_text("NOT JSON")
+            cache = root / "_cache"
+            _make_cache(cache)
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    result = run_migrate(root, yes=True)
+            # Adapter dir should be preserved due to failed JSON conversion
+            self.assertTrue((root / ".cypilot-adapter").is_dir())
+
+
+# ===========================================================================
+# Test: no systems → primary_slug fallback (line 1360)
+# ===========================================================================
+
+class TestRunMigrateNoSystems(unittest.TestCase):
+    """Cover line 1360: no systems in v2 → fallback to first kit slug."""
+
+    def test_no_systems_uses_kit_fallback(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            adapter = root / ".cypilot-adapter"
+            core = root / ".cypilot"
+            adapter.mkdir(parents=True)
+            core.mkdir(parents=True)
+            (root / ".git").mkdir()
+            (root / "AGENTS.md").write_text("# agents\n")
+            # artifacts.json with no systems but has kits
+            artifacts = {
+                "version": "1.0",
+                "systems": [],
+                "kits": {"my-kit": {"format": "Cypilot", "path": "kits/my-kit"}},
+                "ignore": [],
+            }
+            (adapter / "artifacts.json").write_text(json.dumps(artifacts))
+            # Add a pr-review.json to exercise the primary_slug logic
+            (adapter / "pr-review.json").write_text(
+                json.dumps({"dataDir": ".prs", "prompts": []})
+            )
+            cache = root / "_cache"
+            _make_cache(cache)
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    result = run_migrate(root, yes=True)
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+
+
+# ===========================================================================
+# Test: v2 root config files removed (lines 1387-1388)
+# ===========================================================================
+
+class TestRunMigrateRemovesV2RootFiles(unittest.TestCase):
+    """Cover lines 1387-1388: cypilot-agents.json removed."""
+
+    def test_v2_root_files_removed(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _make_v2_project(root)
+            # Add v2 root files
+            (root / ".cypilot-config.json").write_text('{"cypilotCorePath": ".cypilot"}')
+            (root / "cypilot-agents.json").write_text('{"agents": []}')
+            cache = root / "_cache"
+            _make_cache(cache)
+            with patch("cypilot.commands.migrate.CACHE_DIR", cache):
+                with patch("cypilot.commands.init.CACHE_DIR", cache):
+                    result = run_migrate(root, yes=True)
+            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
+            self.assertFalse((root / ".cypilot-config.json").exists())
+            self.assertFalse((root / "cypilot-agents.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

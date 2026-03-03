@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -11,11 +12,12 @@ from ..utils.ui import ui
 def cmd_where_defined(argv: List[str]) -> int:
     """Find where a Cypilot ID is defined."""
     p = argparse.ArgumentParser(prog="where-defined", description="Find where an Cypilot ID is defined")
-    p.add_argument("--id", required=True, help="Cypilot ID to find definition for")
+    p.add_argument("id_positional", nargs="?", default=None, help="Cypilot ID to find definition for")
+    p.add_argument("--id", default=None, help="Cypilot ID to find definition for")
     p.add_argument("--artifact", default=None, help="Limit search to specific artifact (optional)")
     args = p.parse_args(argv)
 
-    target_id = str(args.id).strip()
+    target_id = (args.id_positional or args.id or "").strip()
     if not target_id:
         ui.result({"status": "ERROR", "message": "ID cannot be empty"})
         return 1
@@ -71,7 +73,7 @@ def cmd_where_defined(argv: List[str]) -> int:
                 artifacts_to_scan.append((artifact_path, str(artifact_meta.kind)))
 
     if not artifacts_to_scan:
-        ui.result({"status": "NOT_FOUND", "id": target_id, "artifacts_scanned": 0, "count": 0, "definitions": []})
+        ui.result({"status": "NOT_FOUND", "id": target_id, "artifacts_scanned": 0, "count": 0, "definitions": []}, human_fn=lambda d: _human_where_defined(d))
         return 0
 
     # @cpt-begin:cpt-cypilot-flow-traceability-validation-query:p1:inst-if-where-def
@@ -93,10 +95,50 @@ def cmd_where_defined(argv: List[str]) -> int:
             })
 
     if not definitions:
-        ui.result({"status": "NOT_FOUND", "id": target_id, "artifacts_scanned": len(artifacts_to_scan), "count": 0, "definitions": []})
+        ui.result({"status": "NOT_FOUND", "id": target_id, "artifacts_scanned": len(artifacts_to_scan), "count": 0, "definitions": []}, human_fn=lambda d: _human_where_defined(d))
         return 2
 
     status = "FOUND" if len(definitions) == 1 else "AMBIGUOUS"
-    ui.result({"status": status, "id": target_id, "artifacts_scanned": len(artifacts_to_scan), "count": len(definitions), "definitions": definitions})
+    ui.result({"status": status, "id": target_id, "artifacts_scanned": len(artifacts_to_scan), "count": len(definitions), "definitions": definitions}, human_fn=lambda d: _human_where_defined(d))
     # @cpt-end:cpt-cypilot-flow-traceability-validation-query:p1:inst-if-where-def
     return 0 if status == "FOUND" else 2
+
+
+def _human_where_defined(data: dict) -> None:
+    target = data.get("id", "?")
+    status = data.get("status", "")
+    defs = data.get("definitions", [])
+    n_art = data.get("artifacts_scanned", 0)
+
+    ui.header("Where Defined")
+    ui.detail("ID", target)
+    ui.detail("Artifacts scanned", str(n_art))
+
+    if not defs:
+        ui.blank()
+        ui.warn(f"ID not found in any artifact.")
+        ui.blank()
+        return
+
+    if status == "AMBIGUOUS":
+        ui.warn(f"Ambiguous — {len(defs)} definitions found")
+
+    cwd = os.getcwd()
+
+    def _rel(path: str) -> str:
+        try:
+            return os.path.relpath(path, cwd)
+        except ValueError:
+            return path
+
+    ui.blank()
+    for d in defs:
+        art = _rel(d.get("artifact", "?"))
+        line = d.get("line", "")
+        art_type = d.get("artifact_type", "")
+        checked = d.get("checked", False)
+        loc = f":{line}" if line else ""
+        suffix = "  ✓" if checked else ""
+        ui.step(f"{art}{loc}  ({art_type}){suffix}")
+
+    ui.blank()

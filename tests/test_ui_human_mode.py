@@ -331,8 +331,8 @@ class TestHumanValidate(_HumanModeBase):
                 "errors": [
                     {"message": "Missing section", "path": "DESIGN.md", "line": "10"},
                     {"message": "Bad ref"},
-                ] + [{"message": f"err{i}"} for i in range(25)],
-                "warnings": [{"message": f"w{i}"} for i in range(15)],
+                ] + [{"message": f"err{i}"} for i in range(35)],
+                "warnings": [{"message": f"w{i}"} for i in range(20)],
             })
         out = buf.getvalue()
         self.assertIn("failed", out)

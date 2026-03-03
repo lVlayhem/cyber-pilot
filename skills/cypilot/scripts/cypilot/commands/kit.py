@@ -423,10 +423,54 @@ def cmd_kit_install(argv: List[str]) -> int:
     if result.get("errors"):
         output["errors"] = result["errors"]
 
-    ui.result(output)
+    ui.result(output, human_fn=lambda d: _human_kit_install(d))
     return 0
     # @cpt-end:cpt-cypilot-state-blueprint-system-kit-install:p1:inst-install-complete
     # @cpt-end:cpt-cypilot-flow-blueprint-system-kit-install:p1:inst-return-install-ok
+
+
+def _human_kit_install(data: dict) -> None:
+    status = data.get("status", "")
+    kit_slug = data.get("kit", "?")
+    version = data.get("version", "?")
+    action = data.get("action", "installed")
+
+    ui.header("Kit Install")
+    ui.detail("Kit", kit_slug)
+    ui.detail("Version", str(version))
+    ui.detail("Action", action)
+
+    if status == "DRY_RUN":
+        ui.detail("Source", data.get("source", "?"))
+        ui.detail("Reference", data.get("reference", "?"))
+        ui.detail("Blueprints", data.get("blueprints", "?"))
+        ui.success("Dry run — no files written.")
+        ui.blank()
+        return
+
+    fw = data.get("files_written", 0)
+    kinds = data.get("artifact_kinds", [])
+    ui.detail("Files written", str(fw))
+    if kinds:
+        ui.detail("Artifact kinds", ", ".join(kinds))
+
+    errs = data.get("errors", [])
+    if errs:
+        ui.blank()
+        for e in errs:
+            ui.warn(str(e))
+
+    if status == "PASS":
+        ui.success(f"Kit '{kit_slug}' installed.")
+    elif status == "FAIL":
+        msg = data.get("message", "")
+        hint = data.get("hint", "")
+        ui.error(msg or "Install failed.")
+        if hint:
+            ui.hint(hint)
+    else:
+        ui.info(f"Status: {status}")
+    ui.blank()
 
 
 # ---------------------------------------------------------------------------
@@ -538,10 +582,44 @@ def cmd_kit_update(argv: List[str]) -> int:
     if all_errors:
         output["errors"] = all_errors
 
-    ui.result(output)
+    ui.result(output, human_fn=lambda d: _human_kit_update(d))
     return 0
     # @cpt-end:cpt-cypilot-state-blueprint-system-kit-install:p1:inst-update-complete
     # @cpt-end:cpt-cypilot-flow-blueprint-system-kit-update:p1:inst-return-update-ok
+
+
+def _human_kit_update(data: dict) -> None:
+    status = data.get("status", "")
+    n = data.get("kits_updated", 0)
+
+    ui.header("Kit Update")
+    ui.detail("Kits updated", str(n))
+
+    for r in data.get("results", []):
+        kit_slug = r.get("kit", "?")
+        action = r.get("action", "?")
+        fw = r.get("files_written")
+        kinds = r.get("artifact_kinds", [])
+        parts = [f"{kit_slug}: {action}"]
+        if fw is not None:
+            parts.append(f"{fw} files")
+        if kinds:
+            parts.append(", ".join(kinds))
+        ui.step("  ".join(parts))
+
+    errs = data.get("errors", [])
+    if errs:
+        ui.blank()
+        for e in errs:
+            ui.warn(str(e))
+
+    if status == "PASS":
+        ui.success("Kit update complete.")
+    elif status == "WARN":
+        ui.warn("Kit update finished with warnings.")
+    else:
+        ui.info(f"Status: {status}")
+    ui.blank()
 
 
 # ---------------------------------------------------------------------------
@@ -619,9 +697,38 @@ def cmd_generate_resources(argv: List[str]) -> int:
     if all_errors:
         output["errors"] = all_errors
 
-    ui.result(output)
+    ui.result(output, human_fn=lambda d: _human_generate_resources(d))
     return 0
     # @cpt-end:cpt-cypilot-flow-blueprint-system-generate-resources:p1:inst-return-gen-ok
+
+
+def _human_generate_resources(data: dict) -> None:
+    status = data.get("status", "")
+    n = data.get("kits_processed", 0)
+
+    ui.header("Generate Resources")
+    ui.detail("Kits processed", str(n))
+
+    for r in data.get("results", []):
+        kit_slug = r.get("kit", "?")
+        fw = r.get("files_written", 0)
+        kinds = r.get("artifact_kinds", [])
+        kind_str = f"  ({', '.join(kinds)})" if kinds else ""
+        ui.step(f"{kit_slug}: {fw} files generated{kind_str}")
+
+    errs = data.get("errors", [])
+    if errs:
+        ui.blank()
+        for e in errs:
+            ui.warn(str(e))
+
+    if status == "PASS":
+        ui.success("Resources generated.")
+    elif status == "WARN":
+        ui.warn("Generation finished with warnings.")
+    else:
+        ui.info(f"Status: {status}")
+    ui.blank()
 
 
 # ---------------------------------------------------------------------------
@@ -2040,9 +2147,82 @@ def cmd_kit_migrate(argv: List[str]) -> int:
     if args.dry_run:
         output["dry_run"] = True
 
-    ui.result(output)
+    ui.result(output, human_fn=lambda d: _human_kit_migrate(d))
     return 0
     # @cpt-end:cpt-cypilot-flow-blueprint-system-kit-migrate:p1:inst-return-migrate-ok
+
+
+def _human_kit_migrate(data: dict) -> None:
+    status = data.get("status", "")
+    dry = data.get("dry_run", False)
+
+    ui.header("Kit Migrate" + (" (dry run)" if dry else ""))
+    ui.detail("Migrated", str(data.get("kits_migrated", 0)))
+    ui.detail("Current", str(data.get("kits_current", 0)))
+    if data.get("kits_aborted"):
+        ui.detail("Aborted", str(data["kits_aborted"]))
+
+    for r in data.get("results", []):
+        kit_slug = r.get("kit", "?")
+        rs = r.get("status", "?")
+        from_v = r.get("from_version")
+        to_v = r.get("to_version")
+        ver_str = ""
+        if from_v is not None and to_v is not None:
+            ver_str = f" v{from_v} → v{to_v}"
+
+        if rs == "migrated":
+            ui.step(f"{kit_slug}: migrated{ver_str}")
+            regen = r.get("regenerated", {})
+            if regen:
+                fw = regen.get("files_written", 0)
+                ww = regen.get("workflows_written", 0)
+                err = regen.get("error")
+                if err:
+                    ui.warn(f"  Regen failed: {err}")
+                else:
+                    ui.substep(f"  Regenerated: {fw} files, {ww} workflows")
+            # Show merge details
+            merged = r.get("merged_blueprints", [])
+            for mb in merged:
+                bp_name = mb.get("blueprint", "?")
+                accepted = mb.get("accepted", 0)
+                declined = mb.get("declined", 0)
+                inserted = mb.get("inserted", 0)
+                deleted = mb.get("deleted", 0)
+                parts = []
+                if accepted:
+                    parts.append(f"{accepted} accepted")
+                if declined:
+                    parts.append(f"{declined} declined")
+                if inserted:
+                    parts.append(f"{inserted} inserted")
+                if deleted:
+                    parts.append(f"{deleted} deleted")
+                if parts:
+                    ui.substep(f"  {bp_name}: {', '.join(parts)}")
+        elif rs == "current":
+            ui.step(f"{kit_slug}: already current{ver_str}")
+        elif rs == "aborted":
+            ui.warn(f"{kit_slug}: aborted{ver_str}")
+        elif rs == "FAIL":
+            msg = r.get("message", "")
+            ui.warn(f"{kit_slug}: FAILED — {msg}")
+        else:
+            ui.substep(f"{kit_slug}: {rs}")
+
+    if status == "PASS":
+        if dry:
+            ui.success("Dry run complete — no files written.")
+        else:
+            ui.success("Kit migration complete.")
+    elif status == "ABORTED":
+        ui.warn("Migration aborted.")
+    elif status == "FAIL":
+        ui.error("Migration failed.")
+    else:
+        ui.info(f"Status: {status}")
+    ui.blank()
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -788,27 +789,18 @@ def _human_validate(data: dict) -> None:
     errors = data.get("errors", [])
     if errors:
         ui.blank()
-        shown = errors[:20]
-        for e in shown:
-            msg = e.get("message", "") if isinstance(e, dict) else str(e)
-            path = e.get("path", "") if isinstance(e, dict) else ""
-            line = e.get("line", "") if isinstance(e, dict) else ""
-            loc = f"{path}:{line}" if path and line else (path or "")
-            if loc:
-                ui.warn(f"{loc}  {msg}")
-            else:
-                ui.warn(msg)
-        if len(errors) > 20:
-            ui.substep(f"  ... and {len(errors) - 20} more error(s)")
+        for e in errors[:30]:
+            _format_issue(e, is_error=True)
+        if len(errors) > 30:
+            ui.substep(f"  ... and {len(errors) - 30} more error(s)")
 
     warnings = data.get("warnings", [])
     if warnings:
-        shown_w = warnings[:10]
-        for w in shown_w:
-            msg = w.get("message", "") if isinstance(w, dict) else str(w)
-            ui.substep(f"  ⚠ {msg}")
-        if len(warnings) > 10:
-            ui.substep(f"  ... and {len(warnings) - 10} more warning(s)")
+        ui.blank()
+        for w in warnings[:15]:
+            _format_issue(w, is_error=False)
+        if len(warnings) > 15:
+            ui.substep(f"  ... and {len(warnings) - 15} more warning(s)")
 
     ui.blank()
     if status == "PASS":
@@ -819,4 +811,88 @@ def _human_validate(data: dict) -> None:
         ui.error(f"Validation failed — {n_err} error(s).")
     else:
         ui.info(f"Status: {status}")
+    ui.blank()
+
+
+def _issue_location(issue: dict) -> str:
+    """Extract display location from an issue dict, relative to cwd."""
+    loc = str(issue.get("location", ""))
+    if not loc:
+        path = str(issue.get("path", ""))
+        line = issue.get("line", "")
+        if path:
+            loc = f"{path}:{line}" if line else path
+    if not loc:
+        return ""
+    try:
+        if ":" in loc:
+            parts = loc.rsplit(":", 1)
+            if parts[1].isdigit():
+                return f"{os.path.relpath(parts[0])}:{parts[1]}"
+        return os.path.relpath(loc)
+    except ValueError:
+        return loc
+
+
+def _format_issue(issue: object, *, is_error: bool) -> None:
+    """Format a single error/warning with all available fields.
+
+    Generic: iterates ALL keys in the dict so no information is ever lost.
+    Special formatting for known structural keys (location, message, code,
+    reasons, fixing_prompt); everything else auto-formatted as key: value.
+    """
+    if not isinstance(issue, dict):
+        if is_error:
+            ui.warn(str(issue))
+        else:
+            ui.substep(f"  \u25b8 {issue}")
+        return
+
+    msg = issue.get("message", "")
+    code = issue.get("code", "")
+    loc = _issue_location(issue)
+
+    # Line 1: location [code]
+    header_parts = []
+    if loc:
+        header_parts.append(loc)
+    if code:
+        header_parts.append(f"[{code}]")
+
+    if header_parts:
+        if is_error:
+            ui.warn(f"{' '.join(header_parts)}")
+        else:
+            ui.substep(f"  \u25b8 {' '.join(header_parts)}")
+        if msg:
+            ui.substep(f"    {msg}")
+    else:
+        if is_error:
+            ui.warn(msg)
+        else:
+            ui.substep(f"  \u25b8 {msg}")
+
+    # Structured fields: reasons, fixing_prompt
+    reasons = issue.get("reasons")
+    if isinstance(reasons, list) and reasons:
+        for r in reasons:
+            ui.substep(f"    \u2192 {r}")
+
+    fixing = issue.get("fixing_prompt")
+    if fixing:
+        ui.substep(f"    Fix: {fixing}")
+
+    # Auto-format ALL remaining keys so nothing is ever lost
+    _HANDLED_KEYS = {
+        "type", "message", "code", "line", "path", "location",
+        "reasons", "fixing_prompt",
+    }
+    for k, v in issue.items():
+        if k in _HANDLED_KEYS or v is None or v == "" or v == []:
+            continue
+        if isinstance(v, list):
+            ui.substep(f"    {k}: {', '.join(str(x) for x in v)}")
+        else:
+            ui.substep(f"    {k}: {v}")
+
     ui.blank()

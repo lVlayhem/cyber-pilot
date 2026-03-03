@@ -537,16 +537,104 @@ def _human_update_ok(
 ) -> None:
     dry = data.get("dry_run", False)
     status = data.get("status", "")
+    prefix = "[dry-run] " if dry else ""
+
+    ui.header(f"{prefix}Cypilot Update")
+    ui.detail("Project root", str(data.get("project_root", "?")))
+    ui.detail("Cypilot dir", str(data.get("cypilot_dir", "?")))
+
+    actions = data.get("actions", {})
+    if actions:
+        # Core directories
+        core_keys = [k for k in actions if k.startswith((".core", "core_")) or k in ("core",)]
+        kit_keys = [k for k in actions if k.startswith("kit_") or k.startswith("kits")]
+        other_keys = [k for k in actions if k not in core_keys and k not in kit_keys]
+
+        # Summarize file actions
+        created = [k for k, v in actions.items() if v == "created"]
+        updated = [k for k, v in actions.items() if v == "updated"]
+        unchanged = [k for k, v in actions.items() if v in ("unchanged", "preserved")]
+
+        if created:
+            ui.blank()
+            ui.step(f"Created ({len(created)})")
+            for k in created:
+                ui.file_action(k, "created")
+        if updated:
+            ui.blank()
+            ui.step(f"Updated ({len(updated)})")
+            for k in updated:
+                ui.file_action(k, "updated")
+        if unchanged:
+            ui.blank()
+            ui.step(f"Unchanged ({len(unchanged)})")
+
+        # Core update details
+        core_update = actions.get("core_update")
+        if isinstance(core_update, dict):
+            ui.blank()
+            ui.step("Core:")
+            for sub_k, sub_v in core_update.items():
+                ui.file_action(sub_k, str(sub_v))
+
+        # Kit results
+        kits_data = actions.get("kits")
+        if isinstance(kits_data, dict):
+            ui.blank()
+            ui.step(f"Kits ({len(kits_data)})")
+            for slug, kr in kits_data.items():
+                if not isinstance(kr, dict):
+                    ui.substep(f"  {slug}: {kr}")
+                    continue
+                ref = kr.get("reference", "")
+                ver = kr.get("version", {})
+                ver_status = ver.get("status", "") if isinstance(ver, dict) else str(ver)
+                gen = kr.get("gen", {})
+                fw = gen.get("files_written", 0) if isinstance(gen, dict) else 0
+                kinds = gen.get("artifact_kinds", []) if isinstance(gen, dict) else []
+                parts = [f"{slug}: {ver_status}"]
+                if ref and ref != ver_status:
+                    parts.append(f"ref={ref}")
+                if fw:
+                    parts.append(f"{fw} files generated")
+                ui.substep(f"  {'  '.join(parts)}")
+                if kinds:
+                    ui.substep(f"    Kinds: {', '.join(kinds)}")
+
+        # Remaining dict/list actions (not already handled)
+        skip = {"core_update", "kits", "agents_regenerated"}
+        for k, v in actions.items():
+            if k in skip or isinstance(v, str):
+                continue
+            if isinstance(v, dict):
+                ui.blank()
+                ui.step(f"{k}:")
+                for sub_k, sub_v in v.items():
+                    if isinstance(sub_v, (dict, list)):
+                        ui.substep(f"  {sub_k}: ...")
+                    else:
+                        ui.substep(f"  {sub_k}: {sub_v}")
+            elif isinstance(v, list):
+                ui.blank()
+                ui.step(f"{k}:")
+                for item in v:
+                    ui.substep(f"  {item}")
+
+        agents_regen = actions.get("agents_regenerated")
+        if isinstance(agents_regen, list) and agents_regen:
+            ui.blank()
+            ui.step(f"Agent integrations regenerated: {', '.join(agents_regen)}")
 
     if errors:
         ui.blank()
-        ui.warn("Update completed with errors:")
+        ui.warn(f"Errors ({len(errors)}):")
         for err in errors:
             if isinstance(err, dict):
                 ui.substep(f"• {err.get('path', '?')}: {err.get('error', '?')}")
             else:
                 ui.substep(f"• {err}")
     if warnings:
+        ui.blank()
         for w in warnings:
             ui.warn(w)
 

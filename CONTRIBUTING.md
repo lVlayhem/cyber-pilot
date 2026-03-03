@@ -1,35 +1,35 @@
 # Contributing to Cypilot
 
+
+<!-- toc -->
+
+- [Prerequisites](#prerequisites)
+- [Development Setup](#development-setup)
+- [Project Architecture (Self-Hosted Bootstrap)](#project-architecture-self-hosted-bootstrap)
+  - [Critical Rule](#critical-rule)
+- [Versioning](#versioning)
+  - [Version Locations](#version-locations)
+  - [Releasing a New Version](#releasing-a-new-version)
+  - [Kit Versioning](#kit-versioning)
+- [Branch and Release Workflow](#branch-and-release-workflow)
+- [Commit Requirements (DCO)](#commit-requirements-dco)
+  - [How to sign off](#how-to-sign-off)
+  - [Retroactive sign-off](#retroactive-sign-off)
+  - [Why DCO?](#why-dco)
+- [CI Pipeline](#ci-pipeline)
+  - [Makefile Targets](#makefile-targets)
+  - [GitHub Actions](#github-actions)
+- [Making Changes](#making-changes)
+  - [Code Changes](#code-changes)
+  - [Architecture / Spec Changes](#architecture-spec-changes)
+  - [Kit Blueprint Changes](#kit-blueprint-changes)
+- [Pull Request Process](#pull-request-process)
+- [Code Style and Conventions](#code-style-and-conventions)
+- [Questions?](#questions)
+
+<!-- /toc -->
+
 Thank you for your interest in contributing to Cypilot! This guide covers the development workflow, versioning scheme, bootstrap architecture, commit requirements, and CI pipeline.
-
-## Table of Contents
-
-- [Contributing to Cypilot](#contributing-to-cypilot)
-  - [Table of Contents](#table-of-contents)
-  - [Prerequisites](#prerequisites)
-  - [Development Setup](#development-setup)
-  - [Project Architecture (Self-Hosted Bootstrap)](#project-architecture-self-hosted-bootstrap)
-    - [Critical Rule](#critical-rule)
-  - [Versioning](#versioning)
-    - [Version Locations](#version-locations)
-    - [Releasing a New Version](#releasing-a-new-version)
-    - [Kit Versioning](#kit-versioning)
-  - [Branch and Release Workflow](#branch-and-release-workflow)
-  - [Commit Requirements (DCO)](#commit-requirements-dco)
-    - [How to sign off](#how-to-sign-off)
-    - [Retroactive sign-off](#retroactive-sign-off)
-    - [Why DCO?](#why-dco)
-  - [CI Pipeline](#ci-pipeline)
-    - [Makefile Targets](#makefile-targets)
-    - [GitHub Actions](#github-actions)
-  - [Making Changes](#making-changes)
-    - [Code Changes](#code-changes)
-    - [Architecture / Spec Changes](#architecture--spec-changes)
-    - [Kit Blueprint Changes](#kit-blueprint-changes)
-  - [Pull Request Process](#pull-request-process)
-  - [Code Style and Conventions](#code-style-and-conventions)
-  - [Questions?](#questions)
-
 ---
 
 ## Prerequisites

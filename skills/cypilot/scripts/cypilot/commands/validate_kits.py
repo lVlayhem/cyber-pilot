@@ -116,21 +116,51 @@ def cmd_validate_kits(argv: List[str]) -> int:
 
 def _human_validate_kits(data: dict) -> None:
     ui.header("Validate Kits")
+    n = data.get("kits_validated", 0)
+    n_err = data.get("error_count", 0)
+    ui.detail("Kits validated", str(n))
+    ui.detail("Errors", str(n_err))
+
+    # Verbose mode: full kit reports
     for k in data.get("kits", []):
         kit_id = k.get("kit", "?")
         status = k.get("status", "?")
+        kinds = k.get("kinds", [])
         if status == "PASS":
-            ui.step(f"{kit_id}: PASS")
+            kind_str = f"  ({', '.join(kinds)})" if kinds else ""
+            ui.step(f"{kit_id}: PASS{kind_str}")
         else:
             ui.warn(f"{kit_id}: {status} ({k.get('error_count', 0)} errors)")
+            for e in k.get("errors", [])[:10]:
+                msg = e.get("message", "") if isinstance(e, dict) else str(e)
+                ui.substep(f"  ✗ {msg}")
+
+    # Non-verbose mode: failed kits summary
     failed = data.get("failed_kits", [])
     if failed:
+        ui.blank()
         for fk in failed:
             ui.warn(f"{fk.get('kit', '?')}: {fk.get('error_count', 0)} error(s)")
+
+    # Show top-level errors
+    errors = data.get("errors", [])
+    if errors:
+        ui.blank()
+        for e in errors[:20]:
+            msg = e.get("message", "") if isinstance(e, dict) else str(e)
+            path = e.get("path", "") if isinstance(e, dict) else ""
+            if path:
+                ui.substep(f"  ✗ {path}: {msg}")
+            else:
+                ui.substep(f"  ✗ {msg}")
+        truncated = data.get("errors_truncated", 0)
+        if truncated:
+            ui.substep(f"  ... and {truncated} more error(s)")
+
     overall = data.get("status", "")
-    n = data.get("kits_validated", 0)
+    ui.blank()
     if overall == "PASS":
         ui.success(f"{n} kit(s) validated, all passed.")
     else:
-        ui.error(f"{n} kit(s) validated, {data.get('error_count', 0)} error(s).")
+        ui.error(f"{n} kit(s) validated, {n_err} error(s).")
     ui.blank()

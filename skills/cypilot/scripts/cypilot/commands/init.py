@@ -354,10 +354,21 @@ def cmd_init(argv: List[str]) -> int:
     # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-user-init
 
     cwd = Path.cwd().resolve()
+    interactive = not args.yes
+
+    if interactive:
+        sys.stderr.write("\n")
+        sys.stderr.write("  \033[1mWelcome to Cypilot\033[0m\n")
+        sys.stderr.write("  Set up AI-powered architecture traceability for your project.\n")
+        sys.stderr.write("  Cypilot will create a configuration directory with design artifacts,\n")
+        sys.stderr.write("  validation rules, and agent integration files.\n")
+        sys.stderr.write("\n")
 
     # Resolve project root
     default_project_root = cwd
-    if args.project_root is None and not args.yes:
+    if args.project_root is None and interactive:
+        sys.stderr.write("  \033[2mThe project root is the top-level directory of your repository.\033[0m\n")
+        sys.stderr.write("  \033[2mPress Enter to use the current directory.\033[0m\n")
         raw_root = _prompt_path("Project root directory?", default_project_root.as_posix())
         project_root = _resolve_user_path(raw_root, cwd)
     else:
@@ -394,7 +405,10 @@ def cmd_init(argv: List[str]) -> int:
     # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-if-interactive
     # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-prompt-dir
     default_install_dir = existing_install_rel or DEFAULT_INSTALL_DIR
-    if args.install_dir is None and not args.yes:
+    if args.install_dir is None and interactive:
+        sys.stderr.write("\n")
+        sys.stderr.write("  \033[2mCypilot stores its files in a subdirectory of your project.\033[0m\n")
+        sys.stderr.write("  \033[2mThis directory will contain .core/, .gen/, and config/ folders.\033[0m\n")
         install_rel = _prompt_path("Cypilot directory (relative to project root)?", default_install_dir)
     else:
         install_rel = args.install_dir or default_install_dir
@@ -709,7 +723,7 @@ def _human_init_ok(
         ui.success("Cypilot initialized!")
         ui.blank()
         ui.info("Next steps:")
-        ui.hint("1. Set up your IDE:  cpt agents --agent <windsurf|cursor|claude|copilot>")
+        ui.hint("1. Set up your IDE:  cpt generate-agents")
         ui.hint("2. Review config:    open " + install_rel + "/config/core.toml")
         ui.hint("3. Start using:      type '/cypilot' in your IDE chat")
     ui.blank()
