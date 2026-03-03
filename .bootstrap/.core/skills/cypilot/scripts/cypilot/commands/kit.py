@@ -1046,6 +1046,8 @@ def _three_way_merge_blueprint(
     force_keys: frozenset = frozenset(),
     restore_keys: frozenset = frozenset(),
     remove_keys: frozenset = frozenset(),
+    skip_keys: frozenset = frozenset(),
+    skip_insert_keys: frozenset = frozenset(),
 ) -> tuple:
     """Three-way merge of a blueprint at the @cpt: marker level.
 
@@ -1056,6 +1058,8 @@ def _three_way_merge_blueprint(
         force_keys: Set of marker keys to force-update even if user customized.
         restore_keys: Set of marker keys to restore (user deleted, re-insert from ref).
         remove_keys: Set of marker keys to remove (reference deleted, user still has).
+        skip_keys: Set of marker keys to NOT update (keep user version even though ref changed).
+        skip_insert_keys: Set of marker keys to NOT insert (even though new in ref).
 
     Returns:
         (merged_text, report) where report is a dict with:
@@ -1130,7 +1134,7 @@ def _three_way_merge_blueprint(
         # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p1:inst-update-unmodified
         elif seg.raw == old_raw:
             # User hasn't changed it — safe to update
-            if new_raw != old_raw:
+            if new_raw != old_raw and key not in skip_keys:
                 merged_parts.append((new_raw, key))
                 updated.append(key)
                 updated_details[key] = (old_raw, new_raw)
@@ -1179,6 +1183,8 @@ def _three_way_merge_blueprint(
         is_new = seg.marker_key not in old_map and seg.marker_key not in seen_keys
         is_restore = seg.marker_key in restore_keys and seg.marker_key in deleted_details
         if not is_new and not is_restore:
+            continue
+        if is_new and seg.marker_key in skip_insert_keys:
             continue
         if seg.marker_key in seen_keys:
             continue
@@ -1627,7 +1633,7 @@ def migrate_kit(
                     bp_results.append(bp_report)
                     continue
 
-                # Content changes: show diffs, prompt
+                # Content changes: prompt per marker
                 sys.stderr.write(f"\n  [{kit_slug}] {bp_name}:\n")
 
                 upg_details = report.get("upgraded_details", {})
@@ -1637,81 +1643,91 @@ def migrate_kit(
                         if k in upg_details:
                             old_tag, new_tag = upg_details[k]
                             sys.stderr.write(f"      {old_tag} → {new_tag}\n")
-                for k in report["updated"]:
-                    sys.stderr.write(f"    ✎ {k} — updated from reference\n")
-                    if k in upd_details:
-                        _show_marker_diff(k, *upd_details[k])
-                # Build inserted content map from new_segments
+
+                # Build inserted content map
                 ins_map: Dict[str, str] = {}
                 for seg in _parse_segments(new_ref_text):
                     if seg.kind == "marker" and seg.marker_key in set(report.get("inserted", [])):
                         ins_map[seg.marker_key] = seg.raw
+
+                # Per-marker prompts: collect decisions
+                declined_update: List[str] = []
+                declined_insert: List[str] = []
+                accepted_force: List[str] = []
+                accepted_restore: List[str] = []
+                accepted_remove: List[str] = []
+
+                for k in report["updated"]:
+                    sys.stderr.write(f"    ✎ {k} — updated from reference\n")
+                    if k in upd_details:
+                        _show_marker_diff(k, *upd_details[k])
+                    if _prompt_confirm("    apply?", apply_state) == "n":
+                        declined_update.append(k)
+
                 for k in report.get("inserted", []):
                     sys.stderr.write(f"    + {k} — new marker\n")
                     if k in ins_map:
                         _show_marker_content(ins_map[k], color="green")
+                    if _prompt_confirm("    insert?", apply_state) == "n":
+                        declined_insert.append(k)
+
                 for k in report["skipped"]:
                     sys.stderr.write(f"    ≡ {k} — customized by you\n")
                     if k in skip_details:
                         _show_marker_diff(k, *skip_details[k])
+                    if _prompt_confirm("    overwrite?", apply_state) == "y":
+                        accepted_force.append(k)
+
                 del_details = report.get("deleted_details", {})
                 for k in report.get("deleted", []):
                     sys.stderr.write(f"    ✗ {k} — deleted by you (exists in reference)\n")
                     if k in del_details:
                         _show_marker_content(del_details[k], color="red")
+                    if _prompt_confirm("    restore?", apply_state) == "y":
+                        accepted_restore.append(k)
+
                 ref_rem_details = report.get("ref_removed_details", {})
                 for k in report.get("ref_removed", []):
                     sys.stderr.write(f"    − {k} — removed from reference (will be deleted from config)\n")
                     if k in ref_rem_details:
                         _show_marker_content(ref_rem_details[k], color="red")
+                    if _prompt_confirm("    remove?", apply_state) == "y":
+                        accepted_remove.append(k)
 
-                # Build context-aware prompt
-                actions = []
-                if n_upd:
-                    actions.append(f"update {n_upd}")
-                if n_ins:
-                    actions.append(f"insert {n_ins}")
-                if n_skip:
-                    actions.append(f"overwrite {n_skip} customized")
-                if n_del:
-                    actions.append(f"restore {n_del} deleted")
-                if n_rem:
-                    actions.append(f"remove {n_rem} obsolete")
-                prompt_msg = f"  {', '.join(actions)}?"
-                answer = _prompt_confirm(prompt_msg, apply_state)
-                if answer == "n":
+                # Re-merge with per-marker decisions
+                merged_text, report = _three_way_merge_blueprint(
+                    old_ref_text, new_ref_text, user_text,
+                    force_keys=frozenset(accepted_force),
+                    restore_keys=frozenset(accepted_restore),
+                    remove_keys=frozenset(accepted_remove),
+                    skip_keys=frozenset(declined_update),
+                    skip_insert_keys=frozenset(declined_insert),
+                )
+
+                if merged_text == user_text:
                     bp_report["action"] = "declined"
                     bp_results.append(bp_report)
                     continue
 
-                # User said yes — apply full reference merge
-                # (force all customized, restore all deleted, remove ref-removed)
-                force_k = frozenset(report["skipped"])
-                restore_k = frozenset(report.get("deleted", []))
-                remove_k = frozenset(report.get("ref_removed", []))
-                if force_k or restore_k or remove_k:
-                    merged_text, report = _three_way_merge_blueprint(
-                        old_ref_text, new_ref_text, user_text,
-                        force_keys=force_k,
-                        restore_keys=restore_k,
-                        remove_keys=remove_k,
-                    )
-                    if report["skipped"]:
-                        bp_report["markers_forced"] = [
-                            k for k in bp_report.get("markers_skipped", [])
-                            if k not in report["skipped"]
-                        ]
-                    else:
-                        bp_report["markers_forced"] = bp_report.pop(
-                            "markers_skipped", []
-                        )
-                    if report.get("restored"):
-                        bp_report["markers_restored"] = report["restored"]
-                    bp_report.pop("markers_skipped", None)
-                    bp_report.pop("markers_deleted", None)
+                # Rebuild bp_report from final merge
+                bp_report = {"blueprint": bp_name}
+                if report["updated"]:
+                    bp_report["markers_updated"] = report["updated"]
+                if report["skipped"]:
+                    bp_report["markers_skipped"] = report["skipped"]
+                if report.get("inserted"):
+                    bp_report["markers_inserted"] = report["inserted"]
+                if report.get("restored"):
+                    bp_report["markers_restored"] = report["restored"]
+                if accepted_force:
+                    bp_report["markers_forced"] = accepted_force
+                if declined_update:
+                    bp_report["markers_declined"] = declined_update
+                if declined_insert:
+                    bp_report["markers_insert_declined"] = declined_insert
 
                 bp_report["action"] = "merged"
-                if text_changed and not report["updated"] and not report.get("inserted"):
+                if not report["updated"] and not report.get("inserted"):
                     bp_report["markers_upgraded"] = True
                 user_bp_dir.mkdir(parents=True, exist_ok=True)
                 user_file.write_text(merged_text, encoding="utf-8")

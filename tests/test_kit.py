@@ -1075,6 +1075,54 @@ class TestMigrateKit(unittest.TestCase):
             # Deleted marker restored
             self.assertIn("heading:title", user_text)
 
+    def test_interactive_partial_marker_decline(self):
+        """Per-marker: accept some updates, decline others within same blueprint."""
+        from cypilot.commands.kit import migrate_kit
+        from unittest.mock import patch
+        from cypilot.utils import toml_utils
+        with TemporaryDirectory() as td:
+            td_p = Path(td)
+            root = td_p / "proj"
+            adapter = _bootstrap_project(root)
+
+            bp_v1 = (
+                '`@cpt:blueprint`\n```toml\nkit = "sdlc"\nartifact = "X"\n```\n`@/cpt:blueprint`\n\n'
+                '`@cpt:heading:alpha`\n```toml\nid = "alpha"\nlevel = 2\n```\nOld Alpha\n`@/cpt:heading:alpha`\n'
+                '`@cpt:heading:beta`\n```toml\nid = "beta"\nlevel = 2\n```\nOld Beta\n`@/cpt:heading:beta`\n'
+            )
+            bp_v2 = (
+                '`@cpt:blueprint`\n```toml\nkit = "sdlc"\nartifact = "X"\n```\n`@/cpt:blueprint`\n\n'
+                '`@cpt:heading:alpha`\n```toml\nid = "alpha"\nlevel = 2\n```\nNew Alpha\n`@/cpt:heading:alpha`\n'
+                '`@cpt:heading:beta`\n```toml\nid = "beta"\nlevel = 2\n```\nNew Beta\n`@/cpt:heading:beta`\n'
+            )
+            ref_dir = adapter / "kits" / "sdlc"
+            ref_bp = ref_dir / "blueprints"
+            ref_bp.mkdir(parents=True)
+            (ref_bp / "X.md").write_text(bp_v2, encoding="utf-8")
+            toml_utils.dump({"version": 2}, ref_dir / "conf.toml")
+
+            prev_bp = ref_dir / ".prev" / "blueprints"
+            prev_bp.mkdir(parents=True)
+            (prev_bp / "X.md").write_text(bp_v1, encoding="utf-8")
+
+            config_kit = adapter / "config" / "kits" / "sdlc"
+            user_bp = config_kit / "blueprints"
+            user_bp.mkdir(parents=True)
+            (user_bp / "X.md").write_text(bp_v1, encoding="utf-8")
+            toml_utils.dump({"version": 1}, config_kit / "conf.toml")
+
+            # alpha → y, beta → n (blueprint#0 unchanged, not prompted)
+            answers = iter(["y", "n"])
+            with patch("builtins.input", side_effect=lambda: next(answers)):
+                result = migrate_kit("sdlc", ref_dir, config_kit, interactive=True)
+            bp = result["blueprints"][0]
+            self.assertEqual(bp["action"], "merged")
+            user_text = (config_kit / "blueprints" / "X.md").read_text()
+            # Alpha was accepted, Beta was declined
+            self.assertIn("New Alpha", user_text)
+            self.assertIn("Old Beta", user_text)
+            self.assertNotIn("New Beta", user_text)
+
     def test_missing_ref_blueprint_file(self):
         from cypilot.commands.kit import migrate_kit
         from cypilot.utils import toml_utils
@@ -1612,6 +1660,48 @@ class TestThreeWayMergeExtended(unittest.TestCase):
         for key in details:
             self.assertIn(key, report["upgraded"],
                           f"Key {key!r} in upgraded_details but missing from upgraded list")
+
+    def test_skip_keys_declines_individual_update(self):
+        """skip_keys prevents specific markers from being updated."""
+        from cypilot.commands.kit import _three_way_merge_blueprint
+        old_ref = (
+            '`@cpt:heading:a`\nOld A\n`@/cpt:heading:a`\n'
+            '`@cpt:heading:b`\nOld B\n`@/cpt:heading:b`\n'
+        )
+        new_ref = (
+            '`@cpt:heading:a`\nNew A\n`@/cpt:heading:a`\n'
+            '`@cpt:heading:b`\nNew B\n`@/cpt:heading:b`\n'
+        )
+        user = old_ref  # unchanged
+        merged, report = _three_way_merge_blueprint(
+            old_ref, new_ref, user,
+            skip_keys=frozenset(["heading:b"]),
+        )
+        self.assertIn("New A", merged)
+        self.assertIn("Old B", merged)
+        self.assertNotIn("New B", merged)
+        self.assertIn("heading:a", report["updated"])
+        self.assertNotIn("heading:b", report["updated"])
+        self.assertIn("heading:b", report["kept"])
+
+    def test_skip_insert_keys_declines_individual_insert(self):
+        """skip_insert_keys prevents specific new markers from being inserted."""
+        from cypilot.commands.kit import _three_way_merge_blueprint
+        old_ref = '`@cpt:heading:a`\nA\n`@/cpt:heading:a`\n'
+        new_ref = (
+            '`@cpt:heading:a`\nA\n`@/cpt:heading:a`\n'
+            '`@cpt:heading:b`\nB\n`@/cpt:heading:b`\n'
+            '`@cpt:heading:c`\nC\n`@/cpt:heading:c`\n'
+        )
+        user = old_ref
+        merged, report = _three_way_merge_blueprint(
+            old_ref, new_ref, user,
+            skip_insert_keys=frozenset(["heading:c"]),
+        )
+        self.assertIn("B", merged)
+        self.assertNotIn("C", merged)
+        self.assertIn("heading:b", report["inserted"])
+        self.assertNotIn("heading:c", report["inserted"])
 
 
 # =========================================================================
