@@ -1413,6 +1413,22 @@ class TestDeriveMarkerId(unittest.TestCase):
         from cypilot.commands.kit import _derive_marker_id
         self.assertEqual(_derive_marker_id("unknown", "data\n"), "")
 
+    def test_kebab_safe_normalizes_spaces(self):
+        """IDs with spaces must be normalized to kebab-case."""
+        from cypilot.commands.kit import _derive_marker_id
+        self.assertEqual(
+            _derive_marker_id("workflow", 'name = "My Workflow"\n'),
+            "my-workflow",
+        )
+
+    def test_kebab_safe_normalizes_symbols(self):
+        """IDs with special characters must be normalized."""
+        from cypilot.commands.kit import _derive_marker_id
+        self.assertEqual(
+            _derive_marker_id("heading", 'id = "PRD: Overview (v2)"\n'),
+            "prd-overview-v2",
+        )
+
 
 # =========================================================================
 # _upgrade_legacy_tags
@@ -1578,6 +1594,24 @@ class TestThreeWayMergeExtended(unittest.TestCase):
         self.assertIn("upgraded", report)
         self.assertGreaterEqual(len(report["upgraded"]), 1)
         self.assertIn("`@cpt:heading:title`", merged)
+
+    def test_upgraded_list_merges_both_sources(self):
+        """upgraded list must contain keys from BOTH normalization and merge-time upgrade."""
+        from cypilot.commands.kit import _three_way_merge_blueprint
+        # User has legacy heading; new_ref has named heading + a NEW legacy rule.
+        # Normalization upgrades user's heading; merge-time upgrade upgrades the new rule.
+        old_ref = '`@cpt:heading`\n```toml\nid = "title"\nlevel = 1\n```\nOld\n`@/cpt:heading`\n'
+        new_ref = (
+            '`@cpt:heading:title`\n```toml\nid = "title"\nlevel = 1\n```\nNew\n`@/cpt:heading:title`\n'
+            '`@cpt:rule`\n```toml\nkind = "prereq"\n```\nNew rule\n`@/cpt:rule`\n'
+        )
+        user = '`@cpt:heading`\n```toml\nid = "title"\nlevel = 1\n```\nOld\n`@/cpt:heading`\n'
+        merged, report = _three_way_merge_blueprint(old_ref, new_ref, user)
+        # Both sources should be present in the upgraded list
+        details = report["upgraded_details"]
+        for key in details:
+            self.assertIn(key, report["upgraded"],
+                          f"Key {key!r} in upgraded_details but missing from upgraded list")
 
 
 # =========================================================================

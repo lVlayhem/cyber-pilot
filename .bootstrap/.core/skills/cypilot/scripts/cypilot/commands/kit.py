@@ -777,6 +777,15 @@ def _parse_segments(text: str) -> List[_Segment]:
 # @cpt-end:cpt-cypilot-algo-blueprint-system-parse-blueprint:p1:inst-derive-identity-key
 
 
+def _kebab_safe(value: str) -> str:
+    """Normalize a string to a safe kebab-case token for marker IDs.
+
+    Lowercase, replace non-alphanumeric sequences with hyphens, strip edges.
+    """
+    result = re.sub(r"[^a-z0-9]+", "-", value.lower())
+    return result.strip("-")
+
+
 def _derive_marker_id(marker_type: str, raw_content: str, preceding_heading_id: str = "") -> str:
     """Derive a kebab-case ID for a legacy marker based on its type and TOML content.
 
@@ -793,32 +802,31 @@ def _derive_marker_id(marker_type: str, raw_content: str, preceding_heading_id: 
 
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-heading
     if marker_type == "heading":
-        return _toml_val("id") or ""
+        return _kebab_safe(_toml_val("id"))
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-heading
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-id
     if marker_type == "id":
-        return _toml_val("kind") or ""
+        return _kebab_safe(_toml_val("kind"))
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-id
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-workflow
     if marker_type == "workflow":
-        return _toml_val("name") or ""
+        return _kebab_safe(_toml_val("name"))
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-workflow
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-check
     if marker_type == "check":
-        cid = _toml_val("id")
-        return cid.lower() if cid else ""
+        return _kebab_safe(_toml_val("id"))
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-check
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-rule
     if marker_type == "rule":
         kind = _toml_val("kind")
         section = _toml_val("section")
         if kind and section:
-            return f"{kind}-{section}"
-        return kind or section or ""
+            return _kebab_safe(f"{kind}-{section}")
+        return _kebab_safe(kind or section)
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-rule
     # @cpt-begin:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-prompt-example
     if marker_type in ("prompt", "example"):
-        return preceding_heading_id
+        return _kebab_safe(preceding_heading_id)
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-prompt-example
     return ""
     # @cpt-end:cpt-cypilot-algo-blueprint-system-three-way-merge:p2:inst-upgrade-legacy
@@ -1235,7 +1243,7 @@ def _three_way_merge_blueprint(
         "ref_removed_details": ref_removed_details,
         "removed": [k for k in ref_removed if k in remove_keys],
         "kept": kept, "inserted": inserted,
-        "upgraded": upgraded or list(norm_upgraded_details),
+        "upgraded": list(dict.fromkeys(list(norm_upgraded_details) + upgraded)),
         "upgraded_details": {**norm_upgraded_details, **upgraded_details},
     }
     return merged_text, report

@@ -44,6 +44,9 @@ def _fence_update(
         None when outside a fence, ``(char, length)`` when inside.
     """
     stripped = line.rstrip("\n")
+    leading = len(stripped) - len(stripped.lstrip(" "))
+    if leading > 3:
+        return state
     m = _FENCE_RE.match(stripped.lstrip())
     if not m:
         return state

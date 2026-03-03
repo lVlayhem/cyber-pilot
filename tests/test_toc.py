@@ -308,6 +308,30 @@ class TestParseHeadingsUnified:
         result = parse_headings(lines)
         assert result == [(2, "Before"), (2, "After")]
 
+    def test_indented_4_spaces_not_a_fence(self):
+        """4+ leading spaces is an indented code block, not a fence (CommonMark §4.5)."""
+        lines = [
+            "## Before",
+            "    ```python",   # 4 spaces — NOT a fence opener
+            "## Middle",
+            "    ```",         # 4 spaces — NOT a fence closer
+            "## After",
+        ]
+        result = parse_headings(lines)
+        assert result == [(2, "Before"), (2, "Middle"), (2, "After")]
+
+    def test_indented_3_spaces_is_a_fence(self):
+        """Up to 3 leading spaces is still a valid fence opener."""
+        lines = [
+            "## Before",
+            "   ```",          # 3 spaces — valid fence
+            "## Inside",
+            "   ```",          # 3 spaces — valid closer
+            "## After",
+        ]
+        result = parse_headings(lines)
+        assert result == [(2, "Before"), (2, "After")]
+
 
 # ---------------------------------------------------------------------------
 # Unified module: build_toc (numbered mode)
