@@ -76,7 +76,7 @@ Ensures teams can upgrade Cypilot without losing configuration or customizations
 3. [x] - `p1` - Replace `.core/` from cache (always force-overwrite) - `inst-replace-core`
 4. [x] - `p1` - Detect directory layout; if old layout detected, trigger automatic restructuring using `cpt-cypilot-algo-version-config-layout-restructure` - `inst-detect-layout`
 5. [x] - `p1` - Migrate `{cypilot_path}/config/core.toml` preserving all user settings - `inst-migrate-config`
-6. [ ] - `p1` - Migrate bundled kit references to GitHub sources (add `source` field for kits without one) - `inst-migrate-kit-sources`
+6. [x] - `p1` - Migrate bundled kit references to GitHub sources (add `source` field for kits without one) - `inst-migrate-kit-sources`
 7. [x] - `p1` - Ensure config scaffold files exist (create only if missing) - `inst-ensure-scaffold`
 8. [x] - `p1` - Regenerate agent entry points - `inst-regenerate-agents`
 9. [x] - `p1` - Run self-check to verify kit integrity (`run_self_check_from_meta`); include result in report, WARN if failed - `inst-self-check`
@@ -106,13 +106,13 @@ Ensures teams can upgrade Cypilot without losing configuration or customizations
 
 ### Update Pipeline
 
-- [ ] `p1` - **ID**: `cpt-cypilot-algo-version-config-update-pipeline`
+- [x] `p1` - **ID**: `cpt-cypilot-algo-version-config-update-pipeline`
 
 1. [x] - `p1` - Replace `.core/` from cache - `inst-replace-core-algo`
 2. [x] - `p1` - Detect and auto-restructure old directory layout - `inst-detect-layout-algo`
 3. [x] - `p1` - Migrate `{cypilot_path}/config/core.toml` - `inst-migrate-config-algo`
-4. [ ] - `p1` - Migrate bundled kit references to GitHub sources (add `source` field) - `inst-migrate-kit-sources-algo`
-5. [ ] - `p1` - (Removed — no separate regen step; kit files are updated directly) - `inst-regen-algo`
+4. [x] - `p1` - Migrate bundled kit references to GitHub sources (add `source` field) - `inst-migrate-kit-sources-algo`
+5. [x] - `p1` - (Removed — no separate regen step; kit files are updated directly) - `inst-regen-algo`
 6. [x] - `p1` - Ensure config scaffold - `inst-scaffold-algo`
 
 ### Layout Restructuring

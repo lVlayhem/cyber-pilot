@@ -130,10 +130,10 @@ def _default_core_toml(system_name: str, system_slug: str) -> dict:
         "system": {
             "name": system_name,
             "slug": system_slug,
-            "kit": "cypilot-sdlc",
+            "kit": "sdlc",
         },
         "kits": {
-            "cypilot-sdlc": {
+            "sdlc": {
                 "format": "Cypilot",
                 "path": "config/kits/sdlc",
             },
@@ -533,30 +533,72 @@ def cmd_init(argv: List[str]) -> int:
     # @cpt-end:cpt-cypilot-algo-core-infra-create-config:p1:inst-write-artifacts-toml
 
     # @cpt-begin:cpt-cypilot-algo-core-infra-create-config:p1:inst-mkdir-kits
-    # Kit installation from cache (will be replaced by prompt+GitHub flow per ADR-0013)
-    from .kit import install_kit, regenerate_gen_aggregates
+    # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-prompt-kit
+    # Kit installation via GitHub prompt (ADR-0013)
+    from .kit import (
+        install_kit, regenerate_gen_aggregates,
+        _parse_github_source, _download_kit_from_github,
+    )
 
+    _DEFAULT_KIT_SOURCE = "cyberfabric/cyber-pilot-kit-sdlc"
     kit_results: Dict[str, Any] = {}
-    kits_cache_dir = CACHE_DIR / "kits"
+    kit_installed = False
 
-    if not args.dry_run and kits_cache_dir.is_dir():
-        for kit_dir in sorted(kits_cache_dir.iterdir()):
-            if not kit_dir.is_dir():
-                continue
+    if not args.dry_run:
+        install_kit_flag = False
 
-            kit_slug = kit_dir.name
-            kit_result = install_kit(kit_dir, cypilot_dir, kit_slug)
+        if interactive and sys.stdin.isatty():
+            sys.stderr.write(f"\n  Install SDLC kit ({_DEFAULT_KIT_SOURCE})?\n")
+            sys.stderr.write("  [a]ccept / [d]ecline: ")
+            sys.stderr.flush()
+            try:
+                answer = input().strip().lower()
+            except EOFError:
+                answer = "d"
+            install_kit_flag = answer in ("a", "accept")
+        elif not interactive:
+            # --yes mode: auto-accept kit installation
+            install_kit_flag = True
+    # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-prompt-kit
 
-            kit_results[kit_slug] = {
-                "files_written": kit_result.get("files_copied", 0),
-                "errors": kit_result.get("errors", []),
-            }
-            if kit_result.get("errors"):
-                errors.extend(
-                    {"path": kit_slug, "error": e} for e in kit_result["errors"]
+        # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-install-kit-accepted
+        if install_kit_flag:
+            try:
+                owner, repo, version = _parse_github_source(_DEFAULT_KIT_SOURCE)
+                ui.step(f"Downloading {_DEFAULT_KIT_SOURCE}...")
+                kit_source_dir, resolved_version = _download_kit_from_github(owner, repo, version)
+                tmp_to_clean = kit_source_dir.parent
+
+                kit_slug = "sdlc"
+                github_source = f"github:{owner}/{repo}"
+                kit_result = install_kit(
+                    kit_source_dir, cypilot_dir, kit_slug,
+                    kit_version=resolved_version, source=github_source,
                 )
-            for key, val in kit_result.get("actions", {}).items():
-                actions[f"kit_{kit_slug}_{key}"] = val
+
+                kit_results[kit_slug] = {
+                    "files_written": kit_result.get("files_copied", 0),
+                    "errors": kit_result.get("errors", []),
+                }
+                if kit_result.get("errors"):
+                    errors.extend(
+                        {"path": kit_slug, "error": e} for e in kit_result["errors"]
+                    )
+                for key, val in kit_result.get("actions", {}).items():
+                    actions[f"kit_{kit_slug}_{key}"] = val
+
+                kit_installed = True
+                ui.substep(f"Kit '{kit_slug}' installed (v{resolved_version or 'dev'})")
+
+                shutil.rmtree(tmp_to_clean, ignore_errors=True)
+            except Exception as exc:
+                ui.warn(f"Kit installation failed: {exc}")
+                errors.append({"path": "kit", "error": str(exc)})
+        # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-install-kit-accepted
+        # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-skip-kit-declined
+        else:
+            ui.info(f"Skipped kit installation. Install later: cpt kit install {_DEFAULT_KIT_SOURCE}")
+        # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-skip-kit-declined
 
     # Regenerate .gen/ aggregates (AGENTS.md, SKILL.md, README.md)
     if not args.dry_run:
@@ -579,8 +621,6 @@ def cmd_init(argv: List[str]) -> int:
             actions["config_skill"] = "unchanged"
 
     actions["kits"] = json.dumps(kit_results)
-    # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-delegate-kits
-    # @cpt-end:cpt-cypilot-flow-core-infra-project-init:p1:inst-prompt-kit-config
     # @cpt-end:cpt-cypilot-algo-core-infra-create-config:p1:inst-mkdir-kits
 
     # @cpt-begin:cpt-cypilot-flow-core-infra-project-init:p1:inst-delegate-agents

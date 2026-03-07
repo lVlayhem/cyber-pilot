@@ -179,68 +179,116 @@ def cmd_update(argv: List[str]) -> int:
     # @cpt-end:cpt-cypilot-flow-version-config-update:p1:inst-detect-layout
     # @cpt-end:cpt-cypilot-algo-version-config-update-pipeline:p1:inst-detect-layout-algo
 
-    # Kit updates from cache (will add bundled-kit-ref migration per ADR-0013)
-    # ── Step 2: Update kits ──────────────────────────────────────────────────────
+    # @cpt-begin:cpt-cypilot-algo-version-config-update-pipeline:p1:inst-migrate-kit-sources-algo
+    # @cpt-begin:cpt-cypilot-flow-version-config-update:p1:inst-migrate-kit-sources
+    # ── Step 1c: Deduplicate legacy kit slugs + migrate sources ──────────
+    if not args.dry_run:
+        deduped = _deduplicate_legacy_kits(config_dir)
+        if deduped:
+            ui.step("Deduplicating legacy kit slugs...")
+            for legacy, canonical in deduped.items():
+                ui.substep(f"{legacy} → {canonical}")
+            actions["kit_dedup"] = deduped
+
+        migrated_kits = _migrate_kit_sources(config_dir)
+        if migrated_kits:
+            ui.step("Migrating kit sources to GitHub...")
+            for slug, src in migrated_kits.items():
+                ui.substep(f"{slug}: source → {src}")
+            actions["kit_source_migration"] = migrated_kits
+    # @cpt-end:cpt-cypilot-flow-version-config-update:p1:inst-migrate-kit-sources
+    # @cpt-end:cpt-cypilot-algo-version-config-update-pipeline:p1:inst-migrate-kit-sources-algo
+
+    # ── Step 2: Update kits from registered sources ─────────────────────────────
     ui.step("Updating kits...")
-    from .kit import update_kit, regenerate_gen_aggregates
+    from .kit import (
+        update_kit, regenerate_gen_aggregates,
+        _read_kits_from_core_toml, _parse_github_source, _download_kit_from_github,
+    )
 
-    kits_cache_dir = CACHE_DIR / "kits"
     kit_results: Dict[str, Any] = {}
+    interactive = not args.no_interactive and sys.stdin.isatty()
 
-    if kits_cache_dir.is_dir():
-        for kit_src in sorted(kits_cache_dir.iterdir()):
-            if not kit_src.is_dir():
-                continue
-            kit_slug = kit_src.name
+    installed_kits = _read_kits_from_core_toml(config_dir)
+    for kit_slug, kit_data in installed_kits.items():
+        source_str = kit_data.get("source", "")
+        kit_src: Optional[Path] = None
+        tmp_to_clean: Optional[Path] = None
 
+        if source_str.startswith("github:"):
+            owner_repo = source_str.removeprefix("github:")
             try:
-                kit_r = update_kit(
-                    kit_slug, kit_src, cypilot_dir,
-                    dry_run=args.dry_run,
-                    interactive=not args.no_interactive and sys.stdin.isatty(),
-                    auto_approve=args.yes,
-                )
+                owner, repo, version = _parse_github_source(owner_repo)
+                kit_src, _ = _download_kit_from_github(owner, repo, version)
+                tmp_to_clean = kit_src.parent
             except Exception as exc:
-                kit_r = {
-                    "kit": kit_slug,
-                    "status": "ERROR",
-                    "error": str(exc),
-                }
-                errors.append({"path": kit_slug, "error": str(exc)})
-            kit_results[kit_slug] = kit_r
-
-            if args.dry_run:
+                errors.append({"path": kit_slug, "error": f"Download failed: {exc}"})
+                ui.warn(f"{kit_slug}: download failed: {exc}")
                 continue
+        elif not source_str:
+            # No source — check cache fallback
+            cache_kit = CACHE_DIR / "kits" / kit_slug
+            if cache_kit.is_dir():
+                kit_src = cache_kit
+            else:
+                continue  # No source, no cache — skip
 
-            # Collect gen errors
-            if kit_r.get("gen_errors"):
-                errors.extend(
-                    {"path": kit_slug, "error": e} for e in kit_r["gen_errors"]
-                )
+        if kit_src is None:
+            continue
 
-            # Report progress
-            ver = kit_r.get("version", {})
-            ver_status = ver.get("status", "") if isinstance(ver, dict) else ver
-            gen = kit_r.get("gen", {})
-            files_written = gen.get("files_written", 0) if isinstance(gen, dict) else 0
+        try:
+            kit_r = update_kit(
+                kit_slug, kit_src, cypilot_dir,
+                dry_run=args.dry_run,
+                interactive=interactive,
+                auto_approve=args.yes,
+                source=source_str,
+            )
+        except Exception as exc:
+            kit_r = {
+                "kit": kit_slug,
+                "status": "ERROR",
+                "error": str(exc),
+            }
+            errors.append({"path": kit_slug, "error": str(exc)})
+        finally:
+            if tmp_to_clean:
+                shutil.rmtree(tmp_to_clean, ignore_errors=True)
 
-            if ver_status == "created":
-                ui.substep(f"{kit_slug}: first install, {files_written} files written")
-            elif ver_status == "updated":
-                ui.substep(f"{kit_slug}: updated, {files_written} file(s) accepted")
-                for fp in gen.get("accepted_files", []):
-                    ui.substep(f"      ~ {fp}")
-                for fp in kit_r.get("gen_rejected", []):
-                    ui.substep(f"      ✗ {fp} (declined)")
-            elif ver_status == "partial":
-                rejected = kit_r.get("gen_rejected", [])
-                ui.substep(f"{kit_slug}: partial, {files_written} accepted, {len(rejected)} declined")
-                for fp in gen.get("accepted_files", []):
-                    ui.substep(f"      ~ {fp}")
-                for fp in rejected:
-                    ui.substep(f"      ✗ {fp} (declined)")
-            elif ver_status == "current":
-                ui.substep(f"{kit_slug}: up to date")
+        kit_results[kit_slug] = kit_r
+
+        if args.dry_run:
+            continue
+
+        # Collect gen errors
+        if kit_r.get("gen_errors"):
+            errors.extend(
+                {"path": kit_slug, "error": e} for e in kit_r["gen_errors"]
+            )
+
+        # Report progress
+        ver = kit_r.get("version", {})
+        ver_status = ver.get("status", "") if isinstance(ver, dict) else ver
+        gen = kit_r.get("gen", {})
+        files_written = gen.get("files_written", 0) if isinstance(gen, dict) else 0
+
+        if ver_status == "created":
+            ui.substep(f"{kit_slug}: first install, {files_written} files written")
+        elif ver_status == "updated":
+            ui.substep(f"{kit_slug}: updated, {files_written} file(s) accepted")
+            for fp in gen.get("accepted_files", []):
+                ui.substep(f"      ~ {fp}")
+            for fp in kit_r.get("gen_rejected", []):
+                ui.substep(f"      ✗ {fp} (declined)")
+        elif ver_status == "partial":
+            rejected = kit_r.get("gen_rejected", [])
+            ui.substep(f"{kit_slug}: partial, {files_written} accepted, {len(rejected)} declined")
+            for fp in gen.get("accepted_files", []):
+                ui.substep(f"      ~ {fp}")
+            for fp in rejected:
+                ui.substep(f"      ✗ {fp} (declined)")
+        elif ver_status == "current":
+            ui.substep(f"{kit_slug}: up to date")
 
     actions["kits"] = kit_results
 
@@ -450,6 +498,153 @@ def _maybe_regenerate_agents(
             ui.substep(f"{agent}: updated")
 
     return regenerated
+
+# ---------------------------------------------------------------------------
+# Bundled kit source migration (ADR-0013)
+# ---------------------------------------------------------------------------
+
+# Legacy slug → canonical slug mapping
+_LEGACY_SLUG_RENAMES: Dict[str, str] = {
+    "cypilot-sdlc": "sdlc",
+}
+
+
+def _deduplicate_legacy_kits(config_dir: Path) -> Dict[str, str]:
+    """Deduplicate legacy kit slugs in core.toml and artifacts.toml.
+
+    If both legacy and canonical slugs exist with the same path,
+    merge into canonical and remove legacy. Updates:
+    - core.toml [kits] section
+    - core.toml [system].kit reference
+    - artifacts.toml [[systems]].kit references
+
+    Returns dict of {legacy_slug: canonical_slug} for deduplicated kits.
+    """
+    core_toml = config_dir / "core.toml"
+    if not core_toml.is_file():
+        return {}
+
+    try:
+        import tomllib
+        with open(core_toml, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return {}
+
+    kits = data.get("kits", {})
+    if not isinstance(kits, dict):
+        return {}
+
+    renamed: Dict[str, str] = {}
+
+    for legacy, canonical in _LEGACY_SLUG_RENAMES.items():
+        if legacy not in kits or canonical not in kits:
+            continue
+        legacy_data = kits.get(legacy, {})
+        canonical_data = kits.get(canonical, {})
+        if not isinstance(legacy_data, dict) or not isinstance(canonical_data, dict):
+            continue
+        if legacy_data.get("path") != canonical_data.get("path"):
+            continue  # Different paths — leave both
+
+        # Same path — merge legacy into canonical, delete legacy
+        for k, v in legacy_data.items():
+            if k not in canonical_data or not canonical_data[k]:
+                canonical_data[k] = v
+        del kits[legacy]
+
+        # Update system.kit in core.toml
+        system = data.get("system", {})
+        if isinstance(system, dict) and system.get("kit") == legacy:
+            system["kit"] = canonical
+
+        renamed[legacy] = canonical
+
+    if not renamed:
+        return {}
+
+    # Write core.toml
+    try:
+        from ..utils import toml_utils
+        toml_utils.dump(data, core_toml, header_comment="Cypilot project configuration")
+    except Exception:
+        pass
+
+    # Update artifacts.toml — fix system.kit references
+    artifacts_toml = config_dir / "artifacts.toml"
+    if artifacts_toml.is_file():
+        try:
+            import tomllib as _tomllib
+            with open(artifacts_toml, "rb") as f:
+                reg = _tomllib.load(f)
+
+            changed = False
+            for sys_entry in reg.get("systems", []):
+                if isinstance(sys_entry, dict) and sys_entry.get("kit") in renamed:
+                    sys_entry["kit"] = renamed[sys_entry["kit"]]
+                    changed = True
+
+            if changed:
+                from ..utils import toml_utils
+                toml_utils.dump(reg, artifacts_toml, header_comment="Cypilot artifacts registry")
+        except Exception:
+            pass
+
+    return renamed
+
+
+# Known bundled kits and their GitHub sources
+_KNOWN_KIT_SOURCES: Dict[str, str] = {
+    "sdlc": "github:cyberfabric/cyber-pilot-kit-sdlc",
+    "cypilot-sdlc": "github:cyberfabric/cyber-pilot-kit-sdlc",
+}
+
+def _migrate_kit_sources(config_dir: Path) -> Dict[str, str]:
+    """Add 'source' field to installed kits that lack one (metadata-only).
+
+    For projects upgrading from versions where kits were bundled in cache,
+    this adds the GitHub source reference so that Step 2 can download and
+    update the kit with interactive diff.
+
+    Returns dict of {slug: source} for migrated kits. Empty if nothing changed.
+    """
+    core_toml = config_dir / "core.toml"
+    if not core_toml.is_file():
+        return {}
+
+    try:
+        import tomllib
+        with open(core_toml, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return {}
+
+    kits = data.get("kits", {})
+    if not isinstance(kits, dict):
+        return {}
+
+    migrated: Dict[str, str] = {}
+    for slug, kit_data in kits.items():
+        if not isinstance(kit_data, dict):
+            continue
+        if kit_data.get("source"):
+            continue  # Already has a source — skip
+        known_source = _KNOWN_KIT_SOURCES.get(slug, "")
+        if known_source:
+            kit_data["source"] = known_source
+            migrated[slug] = known_source
+
+    if not migrated:
+        return {}
+
+    try:
+        from ..utils import toml_utils
+        toml_utils.dump(data, core_toml, header_comment="Cypilot project configuration")
+    except Exception:
+        pass
+
+    return migrated
+
 
 # Re-exported from kit.py — tests import it from here
 from .kit import _read_conf_version as _read_conf_version  # noqa: F401

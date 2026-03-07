@@ -645,7 +645,9 @@ def file_level_kit_update(
     # @cpt-end:cpt-cypilot-algo-kit-file-update:p1:inst-strip-toc
 
     # @cpt-begin:cpt-cypilot-algo-kit-file-update:p1:inst-classify-changes
-    report = _classify_kit_files(source_stripped, user_stripped)
+    # Classify using raw content so TOC-only differences are detected.
+    # Stripped content is used only for diff display (less noise).
+    report = _classify_kit_files(source_files, user_files)
     # @cpt-end:cpt-cypilot-algo-kit-file-update:p1:inst-classify-changes
 
     # @cpt-begin:cpt-cypilot-algo-kit-file-update:p1:inst-check-no-changes
@@ -681,8 +683,10 @@ def file_level_kit_update(
     # @cpt-end:cpt-cypilot-algo-kit-file-update:p1:inst-update-datamodel
 
     for rel_path, change_type in changed:
+        # Stripped content for diff display, raw content for writing
         old_content = user_stripped.get(rel_path, b"")
         new_content = source_stripped.get(rel_path, b"")
+        raw_new_content = source_files.get(rel_path, b"")
         toc_fmt = toc_formats.get(rel_path, "")
 
         if force or auto_approve:
@@ -729,13 +733,16 @@ def file_level_kit_update(
         # @cpt-begin:cpt-cypilot-algo-kit-file-update:p1:inst-apply-changes
         entry = {"path": rel_path, "action": action}
         wrote_file = False
+        wrote_raw = False
 
         if change_type == "added":
             if action in ("accepted", "modified") and not dry_run:
                 dest = user_dir / rel_path
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(new_content)
+                write_data = new_content if action == "modified" else raw_new_content
+                dest.write_bytes(write_data)
                 wrote_file = True
+                wrote_raw = action == "accepted"
             result_added.append(entry)
 
         elif change_type == "removed":
@@ -749,13 +756,16 @@ def file_level_kit_update(
             if action in ("accepted", "modified") and not dry_run:
                 dest = user_dir / rel_path
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(new_content)
+                write_data = new_content if action == "modified" else raw_new_content
+                dest.write_bytes(write_data)
                 wrote_file = True
+                wrote_raw = action == "accepted"
             result_modified.append(entry)
         # @cpt-end:cpt-cypilot-algo-kit-file-update:p1:inst-apply-changes
 
         # @cpt-begin:cpt-cypilot-algo-kit-file-update:p1:inst-toc-regen
-        if wrote_file and toc_fmt:
+        # Skip TOC regen if we wrote raw source content (already has correct TOC)
+        if wrote_file and toc_fmt and not wrote_raw:
             should_regen = auto_approve or force
             if interactive and not should_regen:
                 should_regen = _prompt_toc_regen(rel_path) == "yes"

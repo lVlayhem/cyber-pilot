@@ -140,9 +140,9 @@ Enables users to install Cypilot globally, initialize it in any project with sen
 6. [x] - `p1` - Algorithm: define root system using `cpt-cypilot-algo-core-infra-define-root-system` - `inst-define-root`
 7. [x] - `p1` - Algorithm: create config directory using `cpt-cypilot-algo-core-infra-create-config` - `inst-create-config`
 8. [x] - `p2` - Delegate agent entry point generation to Agent Generator (Feature 5 boundary) - `inst-delegate-agents`
-9. [ ] - `p1` - Prompt user: `Install SDLC kit? [a]ccept [d]ecline` - `inst-prompt-kit`
-10. [ ] - `p1` - **IF** user accepts: delegate kit installation from GitHub to Kit Manager (Feature 2 boundary) - `inst-install-kit-accepted`
-11. [ ] - `p1` - **ELSE**: skip kit installation, display install command for later use - `inst-skip-kit-declined`
+9. [x] - `p1` - Prompt user: `Install SDLC kit? [a]ccept [d]ecline` - `inst-prompt-kit`
+10. [x] - `p1` - **IF** user accepts: delegate kit installation from GitHub to Kit Manager (Feature 2 boundary) - `inst-install-kit-accepted`
+11. [x] - `p1` - **ELSE**: skip kit installation, display install command for later use - `inst-skip-kit-declined`
 11. [x] - `p1` - Algorithm: inject root AGENTS.md using `cpt-cypilot-algo-core-infra-inject-root-agents` - `inst-inject-agents`
 12. [x] - `p1` - Algorithm: create config/AGENTS.md using `cpt-cypilot-algo-core-infra-create-config-agents` - `inst-create-config-agents`
 13. [x] - `p1` - **RETURN** JSON: `{status, install_dir, kits_installed, agents_configured, systems}` (exit 0) - `inst-return-init-ok`

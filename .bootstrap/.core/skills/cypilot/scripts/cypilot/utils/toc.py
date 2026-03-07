@@ -77,7 +77,7 @@ def github_anchor(text: str) -> str:
     - Remove inline formatting (bold, italic, code backticks, strikethrough)
     - Lowercase
     - Keep word chars (unicode), spaces, hyphens
-    - Spaces → hyphens, collapse consecutive hyphens
+    - Spaces → hyphens (consecutive hyphens preserved, matching GitHub)
     """
     text = text.strip().lower()
     # Remove markdown links but keep link text
@@ -86,10 +86,8 @@ def github_anchor(text: str) -> str:
     text = re.sub(r"\*\*|__|[*_`~]", "", text)
     # Keep only word chars, spaces, hyphens
     text = re.sub(r"[^\w\s\-]", "", text)
-    # Spaces → hyphens
-    text = re.sub(r"\s+", "-", text)
-    # Collapse consecutive hyphens
-    text = re.sub(r"-{2,}", "-", text)
+    # Each space → hyphen individually (GitHub preserves consecutive hyphens)
+    text = re.sub(r"\s", "-", text)
     return text.strip("-")
 # @cpt-end:cpt-cypilot-algo-traceability-validation-toc-utils:p1:inst-toc-util-datamodel
 

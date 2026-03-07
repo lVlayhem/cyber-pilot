@@ -566,11 +566,15 @@ def cmd_kit_install(argv: List[str]) -> int:
 
         # @cpt-begin:cpt-cypilot-flow-kit-install-cli:p1:inst-check-existing
         if config_kit_dir.exists() and not args.force:
-            ui.result({
-                "status": "FAIL",
-                "message": f"Kit '{kit_slug}' already installed",
-                "hint": "Use --force to overwrite",
-            })
+            ui.result(
+                {
+                    "status": "FAIL",
+                    "kit": kit_slug,
+                    "message": f"Kit '{kit_slug}' is already installed at {config_kit_dir}",
+                    "hint": f"Use 'cpt kit update' to update, or 'cpt kit install {args.source or args.local_path} --force' to reinstall",
+                },
+                human_fn=lambda d: _human_kit_install(d),
+            )
             return 2
         # @cpt-end:cpt-cypilot-flow-kit-install-cli:p1:inst-check-existing
 
@@ -663,17 +667,30 @@ def _human_kit_install(data: dict) -> None:
 
 # @cpt-flow:cpt-cypilot-flow-kit-update-cli:p1
 def cmd_kit_update(argv: List[str]) -> int:
-    """Update an installed kit from a source directory using file-level diff.
+    """Update installed kits from their registered sources or a local path.
 
-    Delegates to update_kit() which handles version check, first-install,
-    file-level diff, and core.toml registration.  After the kit update,
-    regenerates .gen/ aggregates.
+    Without arguments, updates all installed kits that have a registered
+    source in core.toml.  With a slug, updates only that kit.
+    With --path, updates from a local directory.
 
-    Usage: cypilot kit update <path> [--force] [--dry-run] [--no-interactive] [-y]
+    Usage:
+        cypilot kit update                          (all kits from sources)
+        cypilot kit update sdlc                     (specific kit from source)
+        cypilot kit update --path /local/dir        (from local directory)
     """
     # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-parse-args
-    p = argparse.ArgumentParser(prog="kit update", description="Update an installed kit")
-    p.add_argument("path", help="Path to kit source directory")
+    p = argparse.ArgumentParser(
+        prog="kit update",
+        description="Update installed kits from GitHub sources or a local directory",
+    )
+    p.add_argument(
+        "slug", nargs="?", default=None,
+        help="Kit slug to update (default: all installed kits)",
+    )
+    p.add_argument(
+        "--path", dest="local_path", default=None,
+        help="Update from a local directory instead of registered source",
+    )
     p.add_argument("--force", action="store_true",
                    help="Skip version check and force update")
     p.add_argument("--dry-run", action="store_true", help="Show what would be done")
@@ -684,70 +701,140 @@ def cmd_kit_update(argv: List[str]) -> int:
     args = p.parse_args(argv)
     # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-parse-args
 
-    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-validate-source
-    kit_source = Path(args.path).resolve()
-    if not kit_source.is_dir():
-        ui.result({
-            "status": "FAIL",
-            "message": f"Kit source directory not found: {kit_source}",
-            "hint": "Provide a path to a valid kit directory",
-        })
-        return 2
-    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-validate-source
-
-    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-read-slug
-    # Read slug from source conf.toml
-    kit_slug = _read_kit_slug(kit_source) or kit_source.name
-    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-read-slug
-
     # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-resolve-project
-    # Resolve project
     resolved = _resolve_cypilot_dir()
     if resolved is None:
         return 1
     _, cypilot_dir = resolved
+    config_dir = cypilot_dir / "config"
     # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-resolve-project
 
-    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-delegate-update
-    # Delegate to update_kit (handles version check, first-install, diff, core.toml)
     interactive = not args.no_interactive and sys.stdin.isatty()
-    kit_r = update_kit(
-        kit_slug, kit_source, cypilot_dir,
-        dry_run=args.dry_run,
-        interactive=interactive,
-        auto_approve=args.yes,
-        force=args.force,
-    )
-    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-delegate-update
 
-    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
-    # Regenerate .gen/ aggregates (unless dry-run)
-    if not args.dry_run:
-        regenerate_gen_aggregates(cypilot_dir)
-    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
+    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-resolve-source
+    # Build list of (slug, source_dir, github_source, tmp_dir) to update
+    update_targets: List[Tuple[str, Path, str, Optional[Path]]] = []
 
-    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-format-output
-    # Format output from update_kit result
-    ver = kit_r.get("version", {})
-    ver_status = ver.get("status", "") if isinstance(ver, dict) else str(ver)
-    gen = kit_r.get("gen", {})
-    accepted = gen.get("accepted_files", []) if isinstance(gen, dict) else []
-    declined = kit_r.get("gen_rejected", [])
-    files_written = gen.get("files_written", 0) if isinstance(gen, dict) else 0
+    if args.local_path:
+        # Local directory source
+        kit_source = Path(args.local_path).resolve()
+        if not kit_source.is_dir():
+            ui.result({
+                "status": "FAIL",
+                "message": f"Kit source directory not found: {kit_source}",
+                "hint": "Provide a path to a valid kit directory",
+            })
+            return 2
+        kit_slug = args.slug or _read_kit_slug(kit_source) or kit_source.name
+        update_targets.append((kit_slug, kit_source, "", None))
+    else:
+        # Read kits from core.toml
+        kits_map = _read_kits_from_core_toml(config_dir)
+        if not kits_map:
+            ui.result({
+                "status": "FAIL",
+                "message": "No kits registered in core.toml",
+                "hint": "Install a kit first: cpt kit install owner/repo",
+            })
+            return 2
 
-    output: Dict[str, Any] = {
-        "status": "PASS",
-        "kits_updated": 1 if ver_status not in ("current", "dry_run") else 0,
-        "results": [{
+        # Filter to specific slug if provided
+        if args.slug:
+            if args.slug not in kits_map:
+                ui.result({
+                    "status": "FAIL",
+                    "message": f"Kit '{args.slug}' not found in core.toml",
+                    "hint": f"Registered kits: {', '.join(kits_map.keys())}",
+                })
+                return 2
+            kits_map = {args.slug: kits_map[args.slug]}
+
+        # Resolve GitHub sources
+        for slug, kit_data in kits_map.items():
+            source_str = kit_data.get("source", "")
+            if not source_str:
+                ui.warn(f"Kit '{slug}' has no registered source — skipping")
+                continue
+
+            if source_str.startswith("github:"):
+                owner_repo = source_str.removeprefix("github:")
+                try:
+                    owner, repo, version = _parse_github_source(owner_repo)
+                except ValueError as exc:
+                    ui.warn(f"Kit '{slug}': invalid source '{source_str}': {exc}")
+                    continue
+
+                ui.step(f"Downloading {owner}/{repo}...")
+                try:
+                    kit_source_dir, resolved_version = _download_kit_from_github(owner, repo, version)
+                    update_targets.append((slug, kit_source_dir, source_str, kit_source_dir.parent))
+                except RuntimeError as exc:
+                    ui.warn(f"Kit '{slug}': download failed: {exc}")
+                    continue
+            else:
+                ui.warn(f"Kit '{slug}': unsupported source type '{source_str}' — skipping")
+
+        if not update_targets:
+            ui.result({
+                "status": "FAIL",
+                "message": "No kits to update (no valid sources found)",
+            })
+            return 2
+    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-resolve-source
+
+    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-delegate-update
+    all_results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for kit_slug, kit_source, github_source, tmp_dir in update_targets:
+        try:
+            kit_r = update_kit(
+                kit_slug, kit_source, cypilot_dir,
+                dry_run=args.dry_run,
+                interactive=interactive,
+                auto_approve=args.yes,
+                force=args.force,
+                source=github_source,
+            )
+        except Exception as exc:
+            kit_r = {"kit": kit_slug, "version": {"status": "ERROR"}, "gen": {}}
+            errors.append(f"{kit_slug}: {exc}")
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        ver = kit_r.get("version", {})
+        ver_status = ver.get("status", "") if isinstance(ver, dict) else str(ver)
+        gen = kit_r.get("gen", {})
+        accepted = gen.get("accepted_files", []) if isinstance(gen, dict) else []
+        declined = kit_r.get("gen_rejected", [])
+        files_written = gen.get("files_written", 0) if isinstance(gen, dict) else 0
+
+        all_results.append({
             "kit": kit_slug,
             "action": ver_status,
             "accepted": accepted,
             "declined": declined,
             "files_written": files_written,
-        }],
+        })
+    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-delegate-update
+
+    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
+    if not args.dry_run:
+        regenerate_gen_aggregates(cypilot_dir)
+    # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
+
+    # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-format-output
+    n_updated = sum(1 for r in all_results if r["action"] not in ("current", "dry_run", "ERROR"))
+    output: Dict[str, Any] = {
+        "status": "PASS" if not errors else "WARN",
+        "kits_updated": n_updated,
+        "results": all_results,
     }
-    if ver_status == "current":
-        output["message"] = f"Kit '{kit_slug}' is already up to date"
+    if errors:
+        output["errors"] = errors
+    if n_updated == 0 and not errors:
+        output["message"] = "All kits are up to date"
 
     ui.result(output, human_fn=lambda d: _human_kit_update(d))
     return 0
@@ -998,6 +1085,7 @@ def update_kit(
     interactive: bool = True,
     auto_approve: bool = False,
     force: bool = False,
+    source: str = "",
 ) -> Dict[str, Any]:
     """Full update cycle for a single kit.
 
@@ -1013,6 +1101,7 @@ def update_kit(
         interactive: If True, prompt user for confirmation before writing.
         auto_approve: If True, skip all prompts (accept all).
         force: If True, skip version check and force-overwrite all files.
+        source: Source identifier for registration (e.g. "github:owner/repo").
 
     Layout:
         config/kits/{slug}/     — installed kit files (user-editable)
@@ -1110,7 +1199,7 @@ def update_kit(
         # @cpt-begin:cpt-cypilot-algo-kit-update:p1:inst-update-core-toml
         # Update version in core.toml from source (always, even if some files declined)
         if source_version:
-            _register_kit_in_core_toml(config_dir, kit_slug, source_version, cypilot_dir)
+            _register_kit_in_core_toml(config_dir, kit_slug, source_version, cypilot_dir, source=source)
         # @cpt-end:cpt-cypilot-algo-kit-update:p1:inst-update-core-toml
 
     # @cpt-begin:cpt-cypilot-algo-kit-update:p1:inst-collect-metadata
@@ -1172,6 +1261,26 @@ def cmd_kit(argv: List[str]) -> int:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _read_kits_from_core_toml(config_dir: Path) -> Dict[str, Dict[str, Any]]:
+    """Read all kit entries from config/core.toml [kits] section.
+
+    Returns dict of {slug: {format, path, source?, version?}}.
+    """
+    core_toml = config_dir / "core.toml"
+    if not core_toml.is_file():
+        return {}
+    try:
+        import tomllib
+        with open(core_toml, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return {}
+    kits = data.get("kits", {})
+    if not isinstance(kits, dict):
+        return {}
+    return {k: v for k, v in kits.items() if isinstance(v, dict)}
+
 
 # @cpt-algo:cpt-cypilot-algo-kit-config-helpers:p1
 def _read_kit_slug(kit_source: Path) -> str:
@@ -1247,15 +1356,18 @@ def _register_kit_in_core_toml(
         return
 
     kits = data.setdefault("kits", {})
-    kit_entry: Dict[str, Any] = {
-        "format": "Cypilot",
-        "path": f"config/kits/{kit_slug}",
-    }
+    # Merge into existing entry to preserve fields like 'source'
+    existing = kits.get(kit_slug, {})
+    if not isinstance(existing, dict):
+        existing = {}
+    existing["format"] = "Cypilot"
+    if not existing.get("path"):
+        existing["path"] = f"config/kits/{kit_slug}"
     if source:
-        kit_entry["source"] = source
+        existing["source"] = source
     if kit_version:
-        kit_entry["version"] = kit_version
-    kits[kit_slug] = kit_entry
+        existing["version"] = kit_version
+    kits[kit_slug] = existing
 
     # Write back using our TOML serializer
     try:
