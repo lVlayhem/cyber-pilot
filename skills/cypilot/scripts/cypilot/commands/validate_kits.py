@@ -395,14 +395,24 @@ def _human_validate_kits(data: dict) -> None:
             for w in r.get("warnings", [])[:10]:
                 _show_error(w, prefix="⚠")
 
-    # Non-verbose mode: show top-level errors only if not already shown via sc_results
-    if not data.get("kits") and not sc_results:
-        failed = data.get("failed_kits", [])
-        if failed:
-            ui.blank()
-            for fk in failed:
-                ui.warn(f"{fk.get('kit', '?')}: {fk.get('error_count', 0)} error(s)")
-        for e in (data.get("errors") or [])[:10]:
+    # Non-verbose mode: show errors not already displayed via sc_results
+    if not data.get("kits"):
+        if not sc_results:
+            failed = data.get("failed_kits", [])
+            if failed:
+                ui.blank()
+                for fk in failed:
+                    ui.warn(f"{fk.get('kit', '?')}: {fk.get('error_count', 0)} error(s)")
+        # Deduplicate: skip messages already shown inline in sc_results
+        _shown_msgs: set = set()
+        for r in sc_results:
+            for e in r.get("errors", []):
+                if isinstance(e, dict):
+                    _shown_msgs.add(e.get("message", ""))
+        _top = (data.get("errors") or [])[:10]
+        _unseen = [e for e in _top
+                   if not isinstance(e, dict) or e.get("message", "") not in _shown_msgs]
+        for e in _unseen:
             _show_error(e)
         truncated = data.get("errors_truncated", 0)
         if truncated:

@@ -442,7 +442,7 @@ def run_self_check_from_meta(
                 try:
                     rel = kit_obj.get_examples_path(kind)
                     candidate = (adapter_dir / rel).resolve()
-                    if not candidate.is_dir():
+                    if not candidate.exists():
                         candidate = (project_root / rel).resolve()
                     examples_dir = candidate
                 except Exception:
@@ -455,13 +455,16 @@ def run_self_check_from_meta(
             if examples_dir is None:
                 examples_dir = (kind_dir / "examples").resolve()
 
-            # Pick any .md file in examples directory (not just example.md)
+            # Pick any .md file in examples path (directory or single file)
             example_path = None
             try:
-                if examples_dir.exists():
-                    md_files = list(Path(examples_dir).glob("*.md"))
-                    if md_files:
-                        example_path = md_files[0]
+                if examples_dir is not None and examples_dir.exists():
+                    if examples_dir.is_file():
+                        example_path = examples_dir
+                    else:
+                        md_files = list(Path(examples_dir).glob("*.md"))
+                        if md_files:
+                            example_path = md_files[0]
             except Exception:
                 example_path = None
 
