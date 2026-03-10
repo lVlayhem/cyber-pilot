@@ -681,17 +681,17 @@ def _deduplicate_legacy_kits(config_dir: Path) -> Dict[str, str]:
 
         renamed[legacy] = canonical
 
-    if not renamed:
-        return {}
+    if renamed:
+        # Write core.toml
+        try:
+            from ..utils import toml_utils
+            toml_utils.dump(data, core_toml, header_comment="Cypilot project configuration")
+        except Exception:
+            pass
 
-    # Write core.toml
-    try:
-        from ..utils import toml_utils
-        toml_utils.dump(data, core_toml, header_comment="Cypilot project configuration")
-    except Exception:
-        pass
-
-    # Update artifacts.toml — fix system.kit references
+    # Update artifacts.toml — fix system.kit references unconditionally.
+    # Even if core.toml dedup didn't fire (e.g. legacy slug already removed
+    # from core.toml), artifacts.toml may still reference the old slug.
     artifacts_toml = config_dir / "artifacts.toml"
     if artifacts_toml.is_file():
         try:
@@ -701,9 +701,13 @@ def _deduplicate_legacy_kits(config_dir: Path) -> Dict[str, str]:
 
             changed = False
             for sys_entry in reg.get("systems", []):
-                if isinstance(sys_entry, dict) and sys_entry.get("kit") in renamed:
-                    sys_entry["kit"] = renamed[sys_entry["kit"]]
-                    changed = True
+                if isinstance(sys_entry, dict):
+                    kit_ref = sys_entry.get("kit", "")
+                    canonical = _LEGACY_SLUG_RENAMES.get(kit_ref)
+                    if canonical:
+                        sys_entry["kit"] = canonical
+                        renamed.setdefault(kit_ref, canonical)
+                        changed = True
 
             if changed:
                 from ..utils import toml_utils

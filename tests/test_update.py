@@ -1102,6 +1102,29 @@ class TestDeduplicateLegacyKits(unittest.TestCase):
                 art = tomllib.load(f)
             self.assertEqual(art["systems"][0]["kit"], "sdlc")
 
+    def test_artifacts_toml_fixed_even_without_core_dedup(self):
+        """artifacts.toml legacy slug is fixed even when core.toml has only canonical slug."""
+        from cypilot.commands.update import _deduplicate_legacy_kits
+        from cypilot.utils import toml_utils
+        import tomllib
+        with TemporaryDirectory() as td:
+            config = Path(td)
+            # core.toml only has canonical slug — no dedup needed
+            toml_utils.dump({
+                "kits": {
+                    "sdlc": {"path": "config/kits/sdlc"},
+                },
+            }, config / "core.toml")
+            # artifacts.toml still references the legacy slug
+            toml_utils.dump({
+                "systems": [{"name": "Myapp", "slug": "myapp", "kit": "cypilot-sdlc"}],
+            }, config / "artifacts.toml")
+            result = _deduplicate_legacy_kits(config)
+            self.assertEqual(result, {"cypilot-sdlc": "sdlc"})
+            with open(config / "artifacts.toml", "rb") as f:
+                art = tomllib.load(f)
+            self.assertEqual(art["systems"][0]["kit"], "sdlc")
+
 
 # ---------------------------------------------------------------------------
 # _migrate_kit_sources
