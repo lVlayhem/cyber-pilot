@@ -111,6 +111,19 @@ details = """\
 - **New `build_source_to_resource_mapping()`** — maps source file paths to resource IDs for manifest-driven kits\
 """
 
+["v3.0.13-beta"]
+summary = "Execution plans, plan escalation gate, workflow routing"
+details = """\
+- **Execution Plans workflow** (`workflows/plan.md`): decomposes large tasks into self-contained phase files (≤500 lines) that any AI agent can execute without Cypilot context
+- **Plan template** (`requirements/plan-template.md`): strict structure for phase files — TOML frontmatter, inlined rules, pre-resolved paths, binary acceptance criteria
+- **Plan decomposition** (`requirements/plan-decomposition.md`): strategies for generate (template sections), analyze (checklist categories), implement (CDSL blocks)
+- **Mandatory Plan Escalation Gate** in `generate.md` and `analyze.md` — estimates context size before proceeding; MUST offer `/cypilot-plan` when exceeding budget (generate >2500, analyze >2000 lines)
+- **Workflow routing fix**: `plan` route added with highest priority in SKILL.md — "plan to generate PRD" now correctly routes to plan workflow, not generate
+- **"Kit Rules Are Law" constraint**: rules.md is NEVER trimmed or summarized to fit budgets; phases are split instead
+- **Context budget thresholds** calibrated from real SDLC kit sizes and prompt engineering research (Lost in the Middle, rule-following degradation >8K tokens)
+- **Execution plans FEATURE spec** fully checked off (88/90 items done)\
+"""
+
 ["v3.0.12-beta"]
 summary = "Template variable resolution"
 details = """\

@@ -17,6 +17,7 @@
   - [2.9 Advanced SDLC Workflows (EXTRACTED) ⏳ LOW](#29-advanced-sdlc-workflows-extracted--low)
   - [2.10 V2 → V3 Migration ⏳ HIGH](#210-v2--v3-migration--high)
   - [2.11 Spec Coverage ⏳ HIGH](#211-spec-coverage--high)
+  - [2.12 Execution Plans ✅ HIGH](#212-execution-plans--high)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -543,6 +544,63 @@ Cypilot DESIGN is decomposed into features organized around architectural layers
   - Registered codebase entries from `{cypilot_path}/config/artifacts.toml`
 
 
+### 2.12 [Execution Plans](features/execution-plans.md) ✅ HIGH
+
+- [x] `p1` - **ID**: `cpt-cypilot-feature-execution-plans`
+
+- **Purpose**: Decompose large agent tasks into self-contained phase files that fit within a single LLM context window, eliminating context overflow and non-deterministic results from attention drift.
+
+- **Depends On**: `cpt-cypilot-feature-agent-integration`
+
+- **Scope**:
+  - Plan workflow (`workflows/plan.md`): instructions for AI agents to decompose tasks into phases and generate self-contained phase files
+  - Phase file template (`requirements/plan-template.md`): strict structure for generated phase files — TOML frontmatter, inlined rules, pre-resolved paths, binary acceptance criteria
+  - Decomposition strategies (`requirements/plan-decomposition.md`): how to split tasks by type — generate (template sections), analyze (checklist categories), implement (CDSL blocks)
+  - Budget enforcement: ≤500 lines target, ≤1000 lines max per phase file
+  - Plan storage: `{cypilot_path}/.plans/{task-slug}/` directory (git-ignored) with `plan.toml` manifest and phase files
+  - Phase execution: agent reads self-contained phase file, follows instructions, reports against acceptance criteria
+  - Status tracking: `plan.toml` tracks phase lifecycle (pending → in_progress → done/failed)
+
+- **Out of scope**:
+  - CLI commands for plan management (pure prompt-level feature)
+  - Modifications to existing generate.md or analyze.md workflows
+  - Deterministic validation of phase files (phase files are ephemeral execution artifacts)
+
+- **Requirements Covered**:
+
+  - `p1` - `cpt-cypilot-fr-core-execution-plans`
+  - `p1` - `cpt-cypilot-fr-core-workflows`
+
+- **Design Principles Covered**:
+
+  - `p1` - `cpt-cypilot-principle-determinism-first`
+  - `p1` - `cpt-cypilot-principle-occams-razor`
+
+- **Design Constraints Covered**:
+
+  - `p1` - `cpt-cypilot-constraint-markdown-contract`
+
+- **Domain Model Entities**:
+  - ExecutionPlan
+  - Phase
+  - PhaseFile
+
+- **Design Components**:
+
+  Components reused from Feature 5 (`workflow-engine` via generate/analyze patterns)
+
+- **API**:
+  None (prompt-level feature — no CLI commands)
+
+- **Sequences**:
+
+  None (agent-driven workflow)
+
+- **Data**:
+  - `{cypilot_path}/.plans/{task-slug}/plan.toml` — plan manifest with phase metadata and status
+  - `{cypilot_path}/.plans/{task-slug}/phase-{NN}-{slug}.md` — self-contained phase files
+
+
 ---
 
 ## 3. Feature Dependencies
@@ -553,6 +611,8 @@ cpt-cypilot-feature-core-infra
     ├─→ cpt-cypilot-feature-blueprint-system (Kit Management)
     │
     ├─→ cpt-cypilot-feature-agent-integration
+    │    ↓
+    │    └─→ cpt-cypilot-feature-execution-plans
     │
     ├─→ cpt-cypilot-feature-version-config
     │
@@ -574,6 +634,7 @@ cpt-cypilot-feature-core-infra
 
 - `cpt-cypilot-feature-traceability-validation` requires `cpt-cypilot-feature-core-infra`: validator needs config manager for system/artifact resolution
 - `cpt-cypilot-feature-agent-integration` requires `cpt-cypilot-feature-core-infra`: agent generator consumes kit SKILL.md and workflow files
+- `cpt-cypilot-feature-execution-plans` requires `cpt-cypilot-feature-agent-integration`: plan workflow builds on existing generate/analyze workflows and agent entry points
 - `cpt-cypilot-feature-version-config` requires `cpt-cypilot-feature-core-infra`: update command needs config migration
 - `cpt-cypilot-feature-developer-experience` requires `cpt-cypilot-feature-traceability-validation`: VS Code plugin and doctor delegate to validator and traceability engine
 - `cpt-cypilot-feature-v2-v3-migration` requires `cpt-cypilot-feature-core-infra` and `cpt-cypilot-feature-traceability-validation`: migration needs v3 infrastructure and validation to verify completeness

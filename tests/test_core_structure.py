@@ -62,7 +62,7 @@ class TestBaseStructure:
         wf_files = [
             f
             for f in (PROJECT_ROOT / "workflows").glob("*.md")
-            if f.name not in ("README.md", "AGENTS.md", "analyze.md", "generate.md", "cypilot.md", "rules.md", "adapter.md")
+            if f.name not in ("README.md", "AGENTS.md", "analyze.md", "generate.md", "plan.md", "cypilot.md", "rules.md", "adapter.md")
         ]
         return req_files + wf_files
 

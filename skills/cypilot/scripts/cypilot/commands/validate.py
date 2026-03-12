@@ -459,11 +459,13 @@ def cmd_validate(argv: List[str]) -> int:
 
         def scan_system_codebase(system_node: "SystemNode") -> None:
             for cb_entry in system_node.codebase:
-                # Determine traceability from system artifacts
-                traceability = "FULL"
+                # Determine traceability from system artifacts:
+                # scan as FULL if ANY artifact requires it (per-artifact
+                # DOCS-ONLY is handled during to_code_ids collection).
+                traceability = "DOCS-ONLY"
                 for art in system_node.artifacts:
-                    if art.traceability == "DOCS-ONLY":
-                        traceability = "DOCS-ONLY"
+                    if art.traceability == "FULL":
+                        traceability = "FULL"
                         break
                 scan_codebase_entry(cb_entry, traceability)
             for child in system_node.children:
