@@ -332,6 +332,15 @@ def cmd_adapter_info(argv: list[str]) -> int:
         d = adapter_dir / subdir
         dirs_status[subdir] = d.is_dir()
     config["directories"] = dirs_status
+
+    # Resolved template variables (flat dict for format_map substitution)
+    try:
+        from .resolve_vars import _collect_all_variables
+        vars_result = _collect_all_variables(project_root, adapter_dir, core_data)
+        config["variables"] = vars_result["variables"]
+    except Exception as exc:
+        config["variables"] = {}
+        config["variables_error"] = str(exc)
     # @cpt-end:cpt-cypilot-algo-core-infra-display-info:p1:inst-info-compute-metadata
 
     # @cpt-begin:cpt-cypilot-algo-core-infra-display-info:p1:inst-info-return-ok
@@ -463,6 +472,14 @@ def _human_info(data: dict) -> None:
         ui.blank()
         ui.step(f"Agent integrations ({len(agents)})")
         ui.substep(f"  {', '.join(agents)}")
+
+    # Resolved variables
+    variables = data.get("variables", {})
+    if variables:
+        ui.blank()
+        ui.step(f"Variables ({len(variables)})")
+        for name, path in sorted(variables.items()):
+            ui.substep(f"  {{{name}}}: {ui.relpath(path)}")
 
     # Registry errors
     reg_err = data.get("artifacts_registry_error")
