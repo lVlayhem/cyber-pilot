@@ -1,0 +1,80 @@
+[plan]
+task = "Fix all findings from the cross-validation audit (AUDIT-REPORT.md)"
+type = "generate"
+target = "Spec artifacts (DECOMPOSITION, FEATURE, ADR, CLISPEC, PRD, DESIGN) + minor code fixes"
+created = "2026-03-12T19:30:00Z"
+total_phases = 8
+lifecycle = "active"
+source = "architecture/AUDIT-REPORT.md"
+
+[[phases]]
+number = 1
+title = "DECOMPOSITION + FEATURE Spec Fixes"
+file = "phase-01-decomp-feature-fixes.md"
+status = "pending"
+depends_on = []
+outputs = ["out/phase-01-done.md"]
+inputs = []
+
+[[phases]]
+number = 2
+title = "ADR Housekeeping"
+file = "phase-02-adr-fixes.md"
+status = "pending"
+depends_on = []
+outputs = ["out/phase-02-done.md"]
+inputs = []
+
+[[phases]]
+number = 3
+title = "CLISPEC Remediation"
+file = "phase-03-clispec-fixes.md"
+status = "pending"
+depends_on = []
+outputs = ["out/phase-03-done.md"]
+inputs = []
+
+[[phases]]
+number = 4
+title = "PRD Quality Fixes"
+file = "phase-04-prd-fixes.md"
+status = "pending"
+depends_on = []
+outputs = ["out/phase-04-done.md"]
+inputs = []
+
+[[phases]]
+number = 5
+title = "DESIGN Updates"
+file = "phase-05-design-updates.md"
+status = "pending"
+depends_on = [2]
+outputs = ["out/phase-05-done.md"]
+inputs = []
+
+[[phases]]
+number = 6
+title = "Quick Code Fixes"
+file = "phase-06-code-fixes.md"
+status = "pending"
+depends_on = []
+outputs = ["out/phase-06-done.md"]
+inputs = []
+
+[[phases]]
+number = 7
+title = "Implement kit move-config Command"
+file = "phase-07-kit-move-config.md"
+status = "pending"
+depends_on = [3]
+outputs = ["out/phase-07-done.md"]
+inputs = []
+
+[[phases]]
+number = 8
+title = "Verification Pass"
+file = "phase-08-verification.md"
+status = "pending"
+depends_on = [1, 2, 3, 4, 5, 6, 7]
+outputs = ["out/phase-08-done.md"]
+inputs = ["out/phase-01-done.md", "out/phase-02-done.md", "out/phase-03-done.md", "out/phase-04-done.md", "out/phase-05-done.md", "out/phase-06-done.md", "out/phase-07-done.md"]

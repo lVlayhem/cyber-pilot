@@ -1,6 +1,6 @@
 ---
 name: cypilot
-description: "Invoke when user asks to do something with Cypilot, or wants to analyze/validate artifacts, or create/generate/implement anything using Cypilot workflows. Core capabilities: workflow routing (analyze/generate/auto-config); deterministic validation (structure, cross-refs, traceability, TOC); code↔artifact traceability with @cpt-* markers; spec coverage measurement; ID search/navigation; init/bootstrap; adapter + registry discovery; auto-configuration of brownfield projects (scan conventions, generate rules); kit management (install/update with file-level diff); TOC generation; agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI)."
+description: "Invoke when user asks to do something with Cypilot, or wants to analyze/validate artifacts, or create/generate/implement anything using Cypilot workflows, or plan phased execution. Core capabilities: workflow routing (plan/analyze/generate/auto-config); deterministic validation (structure, cross-refs, traceability, TOC); code↔artifact traceability with @cpt-* markers; spec coverage measurement; ID search/navigation; init/bootstrap; adapter + registry discovery; auto-configuration of brownfield projects (scan conventions, generate rules); kit management (install/update with file-level diff); TOC generation; agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI)."
 ---
 
 # Cypilot Unified Tool
@@ -193,13 +193,17 @@ ALWAYS open and follow `{cypilot_path}/.core/workflows/generate.md` directly WHE
 
 ## Workflow Routing
 
-Cypilot has exactly **TWO** workflows. No exceptions.
+Cypilot has exactly **THREE** workflows. No exceptions.
 
-ALWAYS open and follow `{cypilot_path}/.core/workflows/generate.md` WHEN user intent is WRITE: create, edit, fix, update, implement, refactor, delete, add, setup, configure, build, code
+ALWAYS open and follow `{cypilot_path}/.core/workflows/plan.md` FIRST WHEN user intent is PLAN: plan, let's plan, create a plan, execution plan, break down, decompose — **check this BEFORE generate/analyze** because "plan to generate X" means PLAN, not GENERATE
 
-ALWAYS open and follow `{cypilot_path}/.core/workflows/analyze.md` WHEN user intent is READ: analyze, validate, review, analyze, check, inspect, audit, compare, list, show, find
+ALWAYS open and follow `{cypilot_path}/.core/workflows/generate.md` WHEN user intent is WRITE: create, edit, fix, update, implement, refactor, delete, add, setup, configure, build, code — AND the user did NOT say "plan"
 
-ALWAYS ask user "analyze (read-only) or generate (modify)?" WHEN intent is UNCLEAR: help, look at, work with, handle and STOP WHEN user cancel or exit
+ALWAYS open and follow `{cypilot_path}/.core/workflows/analyze.md` WHEN user intent is READ: analyze, validate, review, analyze, check, inspect, audit, compare, list, show, find — AND the user did NOT say "plan"
+
+ALWAYS ask user "plan (phased execution) / generate (modify) / analyze (read-only)?" WHEN intent is UNCLEAR: help, look at, work with, handle and STOP WHEN user cancel or exit
+
+> **Routing priority**: plan > generate/analyze. If the user says "plan to generate/analyze X", the primary intent is PLAN — the generate/analyze keyword describes WHAT to plan, not what to do now.
 
 > **Note**: `generate.md` auto-triggers the auto-config methodology (`requirements/auto-config.md`) when it detects a brownfield project with no project-specific rules. "configure" intent routes through generate.md.
 

@@ -51,6 +51,12 @@ pattern = "features/*.md"
 traceability = "FULL"
 required = false
 
+[[systems.artifacts]]
+name = "Execution Plans"
+path = "architecture/features/execution-plans.md"
+kind = "FEATURE"
+traceability = "DOCS-ONLY"
+
 [[systems.autodetect.codebase]]
 name = "Cypilot Proxy"
 path = "src/cypilot_proxy"

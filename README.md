@@ -27,8 +27,8 @@ Everything that can be validated, checked, or enforced without an LLM is handled
 
 Two layers of functionality:
 
-- **Core** — deterministic skill engine, generic workflows (generate/analyze), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, and Cypilot DSL (CDSL) for behavioral specifications
-- **SDLC Kit** — artifact-first development pipeline (PRD → DESIGN → ADR → DECOMPOSITION → FEATURE → CODE) with templates, checklists, examples, deterministic validation, cross-artifact consistency checks, and GitHub PR review/status workflows
+- **Core** — deterministic skill engine, universal workflows (generate/analyze/plan), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, execution plans for context-safe phased execution, and Cypilot DSL (CDSL) for behavioral specifications
+- **[SDLC Kit](https://github.com/cyberfabric/cyber-pilot-kit-sdlc)** — artifact-first development pipeline (PRD → DESIGN → ADR → DECOMPOSITION → FEATURE → CODE) with templates, checklists, examples, deterministic validation, cross-artifact consistency checks, and GitHub PR review/status workflows
 
 Works with any language, stack, or repository.
 
@@ -45,12 +45,12 @@ Works with any language, stack, or repository.
   - [Installation](#installation)
     - [Global CLI (recommended)](#global-cli-recommended)
   - [Project Setup](#project-setup)
+    - [Update](#update)
   - [Using Cypilot](#using-cypilot)
     - [Example Prompts](#example-prompts)
     - [Agent Skill](#agent-skill)
     - [Workflow Commands](#workflow-commands)
     - [Checklists and Quality Gates](#checklists-and-quality-gates)
-    - [Update](#update)
   - [Architecture](#architecture)
     - [Directory Structure](#directory-structure)
     - [Kit System](#kit-system)
@@ -76,6 +76,12 @@ Works with any language, stack, or repository.
 
 ```bash
 pipx install git+https://github.com/cyberfabric/cyber-pilot.git
+```
+
+To update to the latest version:
+
+```bash
+pipx upgrade cypilot
 ```
 
 This installs `cypilot` and `cpt` commands globally. The CLI is a thin proxy shell — on first run it downloads the skill bundle into `~/.cypilot/cache/` and delegates all commands to the cached or project-local skill engine.
@@ -111,9 +117,19 @@ The command also:
 
 Supported agents: `windsurf`, `cursor`, `claude`, `copilot`, `openai`.
 
+### Update
+
+```bash
+cpt update
+```
+
+Updates `.core/` from cache, regenerates `.gen/` aggregates, and updates kit files in `config/kits/` with interactive diff prompts for modified files.
+
+---
+
 ## Using Cypilot
 
-Start requests with `cypilot` in your AI agent chat. This switches the agent into Cypilot mode: it loads config and rules, routes the request to the right workflow (analyze vs generate), and gates file writes behind explicit confirmation.
+Start requests with `cypilot` in your AI agent chat. This switches the agent into Cypilot mode: it loads config and rules, routes the request to the right workflow (plan vs generate vs analyze), and gates file writes behind explicit confirmation.
 
 ```
 cypilot on            — enable Cypilot mode
@@ -142,6 +158,15 @@ A full walkthrough is available in [`guides/STORY.md`](guides/STORY.md).
 | `cypilot make DESIGN from PRD.md` | Transforms PRD into architecture design with full traceability |
 | `cypilot decompose auth feature into tasks` | Creates DECOMPOSITION with ordered, dependency-mapped implementation units |
 | `cypilot make FEATURE for login flow` | Produces feature design with acceptance criteria, CDSL flows, edge cases |
+
+**Execution Plans (phased execution)**
+
+| Prompt | What the agent does |
+|--------|---------------------|
+| `cypilot plan generate PRD for task manager` | Decomposes PRD generation into self-contained phase files (≤500 lines each) |
+| `cypilot plan analyze DESIGN` | Creates phased analysis plan with focused checklist groups per phase |
+| `cypilot execute next phase` | Reads next phase file, follows compiled instructions, reports against acceptance criteria |
+| `cypilot plan status` | Reports plan progress: completed/pending/failed phases, next actionable phase |
 
 **Validation & Quality**
 
@@ -173,18 +198,23 @@ Cypilot provides a unified **Agent Skill** (`cypilot`) defined in `skills/cypilo
 
 - Deterministic validation and traceability commands
 - Protocol Guard for consistent context loading
-- Workflow routing (generate vs analyze)
+- Workflow routing (plan vs generate vs analyze)
 - ID lookup and cross-reference resolution
 - Auto-configuration for brownfield projects
 
 ### Workflow Commands
 
-Cypilot has exactly **two** universal workflows:
+Cypilot has exactly **three** universal workflows:
 
 | Command | Workflow | Description |
 |---------|----------|-------------|
+| `/cypilot-plan` | `plan.md` | Plan: decompose large tasks into self-contained phase files for phased execution |
 | `/cypilot-generate` | `generate.md` | Write: create, edit, fix, update, implement, refactor, configure |
 | `/cypilot-analyze` | `analyze.md` | Read: validate, review, check, inspect, audit, compare |
+
+> **Routing priority**: plan > generate > analyze. "Plan to generate PRD" routes to `plan.md`, not `generate.md`.
+
+> **Plan Escalation**: `generate.md` and `analyze.md` include a mandatory escalation gate — if the estimated context exceeds the safe budget (>2500 lines for generate, >2000 for analyze), the agent MUST offer to switch to `/cypilot-plan` for phased execution.
 
 Kit-specific workflows (e.g., PR review, PR status) are provided by kits and exposed as agent entry points automatically.
 
@@ -203,17 +233,6 @@ Kit-specific workflows (e.g., PR review, PR status) are provided by kits and exp
 - [**Reverse engineering**](requirements/reverse-engineering.md) — 270+ criteria for legacy code analysis
 - [**Prompt engineering**](requirements/prompt-engineering.md) — 220+ criteria for AI prompt design
 
-### Update
-
-```bash
-cpt update
-```
-
-Updates `.core/` from cache, regenerates `.gen/` aggregates, and updates kit files in `config/kits/` with interactive diff prompts for modified files.
-
-
----
-
 ## Architecture
 
 ### Directory Structure
@@ -225,7 +244,7 @@ project/
 ├── cypilot/                    # Cypilot install directory
 │   ├── .core/                  # Read-only core (from cache)
 │   │   ├── skills/             # Skill engine + scripts
-│   │   ├── workflows/          # Core workflows (generate.md, analyze.md)
+│   │   ├── workflows/          # Core workflows (generate.md, analyze.md, plan.md)
 │   │   ├── schemas/            # JSON schemas
 │   │   ├── architecture/       # Core architecture docs (PRD, DESIGN, specs)
 │   │   └── requirements/       # Core requirements + checklists

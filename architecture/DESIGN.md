@@ -73,6 +73,12 @@ Each kit is a file package: a collection of artifact definitions (rules, checkli
 
 **Design Response**: Two universal Markdown workflows (generate and analyze) with a common execution protocol. Workflows are loaded and interpreted by AI agents, not by the tool itself. The tool provides deterministic commands that workflows invoke.
 
+##### Execution Plans
+
+- [ ] `p1` - `cpt-cypilot-fr-core-execution-plans`
+
+**Design Response**: A third universal Markdown workflow (`plan.md`) that extends the generate/analyze system with phase-based task decomposition. The plan workflow reads all kit dependencies (template, rules, checklist, constraints) for the target artifact, decomposes the task into phases using type-specific strategies (template sections for generation, checklist categories for analysis, CDSL blocks for implementation), and "compiles" each phase into a self-contained phase file. Phase files are compiled prompts: all rules, constraints, and context are pre-resolved and inlined so the file requires zero external references. Phase files follow a strict template (`requirements/plan-template.md`) with TOML frontmatter, inlined rules, binary acceptance criteria, and a completion report format. Decomposition strategies are defined in `requirements/plan-decomposition.md`. Plans are stored in `{cypilot_path}/.plans/{task-slug}/` (git-ignored) with a `plan.toml` manifest tracking phase lifecycle. No Python code or CLI commands — purely prompt-level, agent-interpreted. Budget enforcement: ≤500 lines target, ≤1000 max per phase file.
+
 ##### Multi-Agent Integration
 
 - [x] `p1` - `cpt-cypilot-fr-core-agents`

@@ -38,6 +38,7 @@
   - [UC-010 Register or Extend a Kit](#uc-010-register-or-extend-a-kit)
   - [UC-011 Update Cypilot Version](#uc-011-update-cypilot-version)
   - [UC-012 Migrate Existing Project](#uc-012-migrate-existing-project)
+  - [UC-013 Generate Execution Plan](#uc-013-generate-execution-plan)
 - [9. Acceptance Criteria](#9-acceptance-criteria)
 - [10. Dependencies](#10-dependencies)
 - [11. Assumptions](#11-assumptions)
@@ -244,6 +245,21 @@ The system MUST provide a deterministic command engine. All validation, scanning
 - [x] `p1` - **ID**: `cpt-cypilot-fr-core-workflows`
 
 The system MUST provide structured workflows for write operations (create, edit, fix, update, implement) and read operations (validate, review, check, inspect, audit). Workflows MUST be portable across projects without hardcoded paths. Workflows MUST support transparent execution logging so users can observe agent reasoning.
+
+**Actors**:
+`cpt-cypilot-actor-user`, `cpt-cypilot-actor-ai-agent`
+
+#### Execution Plans
+
+- [ ] `p1` - **ID**: `cpt-cypilot-fr-core-execution-plans`
+
+The system MUST provide a plan workflow that decomposes large agent tasks into self-contained phase files. Each phase file MUST be a compiled prompt containing all rules, constraints, conventions, and context inlined — no external file references requiring Cypilot knowledge. Phase files MUST be executable by any AI agent without Cypilot context. The system MUST:
+
+1. Support three decomposition strategies: by template sections (for artifact generation), by checklist categories (for analysis/validation), and by CDSL blocks (for code implementation).
+2. Enforce a line budget: ≤500 lines target, ≤1000 lines maximum per phase file. If a phase exceeds the maximum, it MUST be split into sub-phases.
+3. Store plans in a git-ignored directory (`{cypilot_path}/.plans/`) with a TOML manifest tracking phase status (pending/in_progress/done/failed).
+4. Resolve all template variables before writing phase files — zero unresolved `{variable}` references in output.
+5. Include binary acceptance criteria in each phase file so agents can self-verify completion.
 
 **Actors**:
 `cpt-cypilot-actor-user`, `cpt-cypilot-actor-ai-agent`
@@ -879,6 +895,36 @@ The plugin MUST delegate all validation logic to the installed Cypilot CLI to en
 - **User rejects proposed specs**: AI Agent saves partial specs as drafts and allows the user to edit manually before committing.
 
 **Postconditions**: Existing project has Cypilot config and initial artifacts; team can use workflows for new development
+
+---
+
+### UC-013 Generate Execution Plan
+
+**ID**: `cpt-cypilot-usecase-execution-plan`
+
+**Actors**:
+`cpt-cypilot-actor-user`, `cpt-cypilot-actor-ai-agent`
+
+**Preconditions**: Cypilot mode enabled; kit with target artifact kind is registered; task is large enough to benefit from decomposition
+
+**Flow**:
+
+1. User requests plan-based execution (e.g., "plan generate PRD", "plan analyze DESIGN")
+2. AI Agent loads task context: artifact kind, kit dependencies (template, rules, checklist, constraints) (uses capability `cpt-cypilot-fr-core-workflows`)
+3. AI Agent decomposes task into phases using the appropriate strategy (by template sections, checklist categories, or CDSL blocks) (uses capability `cpt-cypilot-fr-core-execution-plans`)
+4. AI Agent compiles each phase into a self-contained phase file with inlined rules, pre-resolved paths, and binary acceptance criteria
+5. AI Agent enforces line budget (≤500 target, ≤1000 max) — splits phases that exceed budget
+6. AI Agent writes plan manifest (`plan.toml`) and phase files to `{cypilot_path}/.plans/{task-slug}/`
+7. AI Agent reports plan summary: total phases, estimated size, execution order
+8. User triggers phase execution one at a time; agent reads phase file and follows self-contained instructions
+9. After each phase, agent self-checks against acceptance criteria and updates manifest status
+
+**Alternative Flows**:
+- **Task fits in single context**: Agent skips plan generation and executes directly via generate/analyze workflow.
+- **Phase exceeds budget after compilation**: Agent splits the phase into sub-phases and regenerates.
+- **Phase fails acceptance criteria**: Agent marks phase as failed in manifest; user can retry or adjust.
+
+**Postconditions**: Plan directory created with manifest and phase files; phases executable independently; `.plans/` directory git-ignored
 
 ---
 
