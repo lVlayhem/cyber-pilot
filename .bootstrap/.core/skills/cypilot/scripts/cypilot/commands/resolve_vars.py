@@ -202,9 +202,11 @@ def cmd_resolve_vars(argv: list[str]) -> int:
                 "available_kits": list(result["kits"].keys()),
             })
             return 1
-        # Rebuild flat with only system + this kit
+        # Rebuild flat with only system + this kit (system wins on collision)
         filtered_flat = dict(result["system"])
-        filtered_flat.update(kit_section)
+        for k, v in kit_section.items():
+            if k not in filtered_flat:
+                filtered_flat[k] = v
         result = {
             "system": result["system"],
             "kits": {slug: kit_section},
@@ -227,14 +229,17 @@ def cmd_resolve_vars(argv: list[str]) -> int:
     # @cpt-end:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-resolve-vars-return
 
 
+# @cpt-begin:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-resolve-vars-human-flat
 def _human_flat(data: dict) -> None:
     """Human-friendly flat variable listing."""
     ui.header("Resolved Variables")
     for name, path in sorted(data.items()):
         ui.detail(f"{{{name}}}", ui.relpath(path))
     ui.blank()
+# @cpt-end:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-resolve-vars-human-flat
 
 
+# @cpt-begin:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-resolve-vars-human-structured
 def _human_structured(data: dict) -> None:
     """Human-friendly structured variable listing."""
     ui.header("Resolved Variables")
@@ -260,3 +265,4 @@ def _human_structured(data: dict) -> None:
     ui.blank()
     ui.info(f"Total: {len(flat)} variables resolved")
     ui.blank()
+# @cpt-end:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-resolve-vars-human-structured

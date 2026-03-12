@@ -172,6 +172,8 @@ Reduces friction in daily Cypilot usage. `doctor` catches environment issues bef
 
 **Supporting**:
 - [x] - `p1` - Render resolved variables in human-friendly `info` output - `inst-info-render-variables`
+- [x] - `p1` - Human-friendly flat variable formatter - `inst-resolve-vars-human-flat`
+- [x] - `p1` - Human-friendly structured variable formatter - `inst-resolve-vars-human-structured`
 
 ### Shell Completions
 

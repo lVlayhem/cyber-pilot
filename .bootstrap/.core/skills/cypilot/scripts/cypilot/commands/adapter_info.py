@@ -342,8 +342,9 @@ def cmd_adapter_info(argv: list[str]) -> int:
         if vars_result.get("collisions"):
             config["variables_collisions"] = vars_result["collisions"]
     except (ImportError, FileNotFoundError, OSError, ValueError) as exc:
-        config["variables"] = {}
+        config["variables"] = None
         config["variables_error"] = str(exc)
+        config["variables_degraded"] = True
     # @cpt-end:cpt-cypilot-algo-core-infra-display-info:p1:inst-info-compute-metadata
 
     # @cpt-begin:cpt-cypilot-algo-core-infra-display-info:p1:inst-info-return-ok
@@ -478,12 +479,15 @@ def _human_info(data: dict) -> None:
 
     # @cpt-begin:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-info-render-variables
     # Resolved variables
-    variables = data.get("variables", {})
+    variables = data.get("variables") or {}
     if variables:
         ui.blank()
         ui.step(f"Variables ({len(variables)})")
         for name, path in sorted(variables.items()):
             ui.substep(f"  {{{name}}}: {ui.relpath(path)}")
+    if data.get("variables_degraded"):
+        ui.blank()
+        ui.warn(f"Variables: {data.get('variables_error', 'unknown error')}")
     # @cpt-end:cpt-cypilot-flow-developer-experience-resolve-vars:p1:inst-info-render-variables
 
     # Registry errors
