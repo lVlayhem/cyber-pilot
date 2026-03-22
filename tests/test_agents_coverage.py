@@ -352,6 +352,29 @@ class TestHumanGenerateAgentsPreview(unittest.TestCase):
         output = err.getvalue()
         self.assertIn("up to date", output)
 
+    @_with_human_mode
+    def test_preview_includes_deletion_only_changes(self):
+        from cypilot.commands.agents import _human_generate_agents_preview
+        import io
+        from contextlib import redirect_stderr
+
+        results = {
+            "claude": {
+                "workflows": {"created": [], "updated": [], "deleted": []},
+                "skills": {
+                    "created": [],
+                    "updated": [],
+                    "deleted": ["/p/.claude/commands/cypilot-plan.md"],
+                },
+            },
+        }
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _human_generate_agents_preview(["claude"], results, Path("/p"))
+        output = err.getvalue()
+        self.assertIn("claude", output)
+        self.assertIn("deleted", output.lower())
+
 
 class TestHumanGenerateAgentsOk(unittest.TestCase):
     """Cover lines 1194-1252 (_human_generate_agents_ok formatter)."""
@@ -523,6 +546,84 @@ class TestProcessSingleAgentEdgeCases(unittest.TestCase):
             )
             # File should be removed
             self.assertFalse((wf_dir / "cypilot-old.md").exists())
+
+    def test_claude_generated_legacy_command_deleted(self):
+        from cypilot.commands.agents import _process_single_agent, _default_agents_config
+
+        with TemporaryDirectory() as td:
+            root, cpt = self._make_project(td)
+            (cpt / ".core" / "workflows").mkdir(parents=True, exist_ok=True)
+            (cpt / ".core" / "workflows" / "generate.md").write_text(
+                "---\nname: cypilot-generate\ndescription: Generate\n---\n# Generate\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "analyze.md").write_text(
+                "---\nname: cypilot-analyze\ndescription: Analyze\n---\n# Analyze\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "plan.md").write_text(
+                "---\nname: cypilot-plan\ndescription: Plan\n---\n# Plan\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "workspace.md").write_text(
+                "---\nname: cypilot-workspace\ndescription: Workspace\n---\n# Workspace\n",
+                encoding="utf-8",
+            )
+
+            legacy_dir = root / ".claude" / "commands"
+            legacy_dir.mkdir(parents=True)
+            legacy_file = legacy_dir / "cypilot-plan.md"
+            legacy_file.write_text(
+                "# /cypilot-plan\n\nALWAYS open and follow `{cypilot_path}/.core/workflows/plan.md`\n",
+                encoding="utf-8",
+            )
+
+            result = _process_single_agent("claude", root, cpt, _default_agents_config(), None, dry_run=False)
+            self.assertIn(
+                legacy_file.relative_to(root).as_posix(),
+                result.get("skills", {}).get("deleted", []),
+            )
+            self.assertFalse(legacy_file.exists())
+
+    def test_claude_hand_authored_legacy_command_preserved(self):
+        from cypilot.commands.agents import _process_single_agent, _default_agents_config
+
+        with TemporaryDirectory() as td:
+            root, cpt = self._make_project(td)
+            (cpt / ".core" / "workflows").mkdir(parents=True, exist_ok=True)
+            (cpt / ".core" / "workflows" / "plan.md").write_text(
+                "---\nname: cypilot-plan\ndescription: Plan\n---\n# Plan\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "generate.md").write_text(
+                "---\nname: cypilot-generate\ndescription: Generate\n---\n# Generate\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "analyze.md").write_text(
+                "---\nname: cypilot-analyze\ndescription: Analyze\n---\n# Analyze\n",
+                encoding="utf-8",
+            )
+            (cpt / ".core" / "workflows" / "workspace.md").write_text(
+                "---\nname: cypilot-workspace\ndescription: Workspace\n---\n# Workspace\n",
+                encoding="utf-8",
+            )
+
+            legacy_dir = root / ".claude" / "commands"
+            legacy_dir.mkdir(parents=True)
+            legacy_file = legacy_dir / "cypilot-plan.md"
+            legacy_file.write_text(
+                "# /cypilot-plan\n\nCustom instructions stay here.\n",
+                encoding="utf-8",
+            )
+
+            result = _process_single_agent("claude", root, cpt, _default_agents_config(), None, dry_run=False)
+            self.assertNotIn(
+                legacy_file.relative_to(root).as_posix(),
+                result.get("skills", {}).get("deleted", []),
+            )
+            skipped = result.get("skills", {}).get("skipped", [])
+            self.assertTrue(any("missing generated marker" in item for item in skipped))
+            self.assertTrue(legacy_file.exists())
 
 
 class TestEnsureCypilotLocalRootDirsAndFiles(unittest.TestCase):

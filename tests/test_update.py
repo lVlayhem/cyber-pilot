@@ -815,6 +815,19 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("Old", output)
         self.assertIn("New", output)
 
+    def test_missing_entries_are_sorted_semantically(self):
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
+
+        ref = {
+            "1.10.0": {"summary": "Tenth minor", "details": ""},
+            "1.9.0": {"summary": "Ninth minor", "details": ""},
+        }
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _show_core_whatsnew(ref, {}, interactive=False)
+        output = err.getvalue()
+        self.assertLess(output.index("1.9.0"), output.index("1.10.0"))
+
     def test_all_seen_returns_true(self):
         from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         same = {"v1": {"summary": "X", "details": ""}}

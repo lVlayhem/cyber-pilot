@@ -716,6 +716,22 @@ def _render_template(lines: List[str], variables: Dict[str, str]) -> str:
             raise SystemExit(f"Missing template variable: {e}")
     rendered = "\n".join(out).rstrip() + "\n"
     return _ensure_frontmatter_description_quoted(rendered)
+
+
+def _looks_like_generated_claude_legacy_command(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped:
+        return False
+    if not re.fullmatch(
+        r"# /[^\n]+(?:\n[ \t]*){1,3}ALWAYS open and follow `[^`]+`",
+        stripped,
+    ):
+        return False
+    match = re.search(r"ALWAYS open and follow `([^`]+)`", stripped)
+    if not match:
+        return False
+    target_path = match.group(1)
+    return "/workflows/" in target_path and "SKILL.md" not in target_path
 # @cpt-end:cpt-cypilot-algo-agent-integration-generate-shims:p1:inst-parse-frontmatter
 
 # @cpt-begin:cpt-cypilot-algo-agent-integration-discover-agents:p1:inst-resolve-kits
@@ -1013,7 +1029,7 @@ def _process_single_agent(
                     except (PermissionError, FileNotFoundError, OSError):
                         pass
 
-    skills_result: Dict[str, Any] = {"created": [], "updated": [], "deleted": [], "outputs": [], "errors": []}
+    skills_result: Dict[str, Any] = {"created": [], "updated": [], "deleted": [], "skipped": [], "outputs": [], "errors": []}
 
     if isinstance(skills_cfg, dict) and skills_cfg:
         outputs = skills_cfg.get("outputs")
@@ -1096,23 +1112,33 @@ def _process_single_agent(
                     _write_or_skip(out_path, content, skills_result, project_root, dry_run)
 
     # ── Clean up legacy .claude/commands/ files that are now replaced by skills ──
-    if agent == "claude" and isinstance(skills_cfg, dict) and skills_cfg:
-        # Collect skill names from outputs (extract from path like .claude/skills/cypilot-generate/SKILL.md)
-        skill_names: Set[str] = set()
-        for out_cfg in skills_cfg.get("outputs", []):
-            rel_path = out_cfg.get("path", "")
-            # Extract skill name from path: .claude/skills/<name>/SKILL.md -> <name>
-            parts = Path(rel_path).parts
-            if len(parts) >= 3 and parts[0] == ".claude" and parts[1] == "skills":
-                skill_names.add(parts[2])
+    if agent == "claude" and isinstance(skills_cfg, dict):
+        outputs = skills_cfg.get("outputs")
+        if isinstance(outputs, list):
+            skill_names: Set[str] = set()
+            for out_cfg in outputs:
+                if not isinstance(out_cfg, dict):
+                    continue
+                rel_path = out_cfg.get("path", "")
+                parts = Path(rel_path).parts
+                if len(parts) >= 3 and parts[0] == ".claude" and parts[1] == "skills":
+                    skill_names.add(parts[2])
 
-        # Delete matching legacy command files
-        legacy_commands_dir = project_root / ".claude" / "commands"
-        if legacy_commands_dir.is_dir() and skill_names:
-            for skill_name in skill_names:
-                legacy_file = legacy_commands_dir / f"{skill_name}.md"
-                if legacy_file.is_file():
+            legacy_commands_dir = project_root / ".claude" / "commands"
+            if legacy_commands_dir.is_dir() and skill_names:
+                for legacy_skill in skill_names:
+                    legacy_file = legacy_commands_dir / f"{legacy_skill}.md"
+                    if not legacy_file.is_file():
+                        continue
                     rel_path = legacy_file.relative_to(project_root).as_posix()
+                    try:
+                        legacy_content = legacy_file.read_text(encoding="utf-8")
+                    except OSError:
+                        skills_result["errors"].append(f"failed to inspect {rel_path}")
+                        continue
+                    if not _looks_like_generated_claude_legacy_command(legacy_content):
+                        skills_result["skipped"].append(f"{rel_path} (missing generated marker)")
+                        continue
                     if not dry_run:
                         try:
                             legacy_file.unlink()
@@ -1211,11 +1237,13 @@ def _process_single_agent(
             "created": skills_result["created"],
             "updated": skills_result["updated"],
             "deleted": skills_result["deleted"],
+            "skipped": skills_result["skipped"],
             "outputs": skills_result["outputs"],
             "counts": {
                 "created": len(skills_result["created"]),
                 "updated": len(skills_result["updated"]),
                 "deleted": len(skills_result["deleted"]),
+                "skipped": len(skills_result["skipped"]),
             },
         },
         "subagents": {
@@ -1378,11 +1406,13 @@ def cmd_generate_agents(argv: List[str]) -> int:
     # Compute total changes
     total_create = 0
     total_update = 0
+    total_delete = 0
     for r in preview_results.values():
         wf = r.get("workflows", {})
         sk = r.get("skills", {})
         total_create += len(wf.get("created", [])) + len(sk.get("created", []))
         total_update += len(wf.get("updated", [])) + len(sk.get("updated", []))
+        total_delete += len(wf.get("deleted", [])) + len(sk.get("deleted", []))
 
     if args.dry_run:
         # Just show the preview and exit
@@ -1391,7 +1421,7 @@ def cmd_generate_agents(argv: List[str]) -> int:
         return 0
 
     # Step 2: Show preview and ask for confirmation (interactive)
-    if total_create == 0 and total_update == 0:
+    if total_create == 0 and total_update == 0 and total_delete == 0:
         ui.info("No changes needed — agent files are up to date.")
     else:
         from ..utils.ui import is_json_mode
@@ -1508,10 +1538,12 @@ def _human_generate_agents_preview(
         sk = r.get("skills", {})
         created_wf = wf.get("created", [])
         updated_wf = wf.get("updated", [])
+        deleted_wf = wf.get("deleted", [])
         created_sk = sk.get("created", [])
         updated_sk = sk.get("updated", [])
+        deleted_sk = sk.get("deleted", [])
 
-        if not (created_wf or updated_wf or created_sk or updated_sk):
+        if not (created_wf or updated_wf or deleted_wf or created_sk or updated_sk or deleted_sk):
             ui.step(f"{agent_name}: up to date")
             continue
 
@@ -1520,10 +1552,14 @@ def _human_generate_agents_preview(
             ui.file_action(path, "created")
         for path in updated_wf:
             ui.file_action(path, "updated")
+        for path in deleted_wf:
+            ui.file_action(path, "deleted")
         for path in created_sk:
             ui.file_action(path, "created")
         for path in updated_sk:
             ui.file_action(path, "updated")
+        for path in deleted_sk:
+            ui.file_action(path, "deleted")
     ui.blank()
 
 def _human_generate_agents_ok(
@@ -1550,33 +1586,45 @@ def _human_generate_agents_ok(
         # Workflows
         created_wf = wf.get("created", [])
         updated_wf = wf.get("updated", [])
+        deleted_wf = wf.get("deleted", [])
         for path in created_wf:
             ui.file_action(path, "created")
         for path in updated_wf:
             ui.file_action(path, "updated")
+        for path in deleted_wf:
+            ui.file_action(path, "deleted")
 
         # Skills
         created_sk = sk.get("created", [])
         updated_sk = sk.get("updated", [])
         deleted_sk = sk.get("deleted", [])
+        skipped_sk = sk.get("skipped", [])
         for path in created_sk:
             ui.file_action(path, "created")
         for path in updated_sk:
             ui.file_action(path, "updated")
         for path in deleted_sk:
             ui.file_action(path, "deleted")
+        for item in skipped_sk:
+            ui.warn(f"  skipped: {item}")
 
         total_wf = wf_counts.get("created", 0) + wf_counts.get("updated", 0)
+        total_wf_deleted = wf_counts.get("deleted", 0)
         total_sk = sk_counts.get("created", 0) + sk_counts.get("updated", 0)
         total_deleted = sk_counts.get("deleted", 0)
-        if total_wf or total_sk or total_deleted:
+        total_skipped = sk_counts.get("skipped", 0)
+        if total_wf or total_wf_deleted or total_sk or total_deleted or total_skipped:
             parts = []
             if total_wf:
                 parts.append(f"{total_wf} workflow(s)")
+            if total_wf_deleted:
+                parts.append(f"{total_wf_deleted} workflow proxy/proxies removed")
             if total_sk:
                 parts.append(f"{total_sk} skill file(s)")
             if total_deleted:
                 parts.append(f"{total_deleted} legacy command(s) removed")
+            if total_skipped:
+                parts.append(f"{total_skipped} legacy command(s) preserved")
             ui.substep(", ".join(parts))
 
         # Errors

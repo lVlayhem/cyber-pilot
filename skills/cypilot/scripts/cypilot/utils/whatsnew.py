@@ -68,8 +68,8 @@ def format_whatsnew_text(text: str, *, use_ansi: bool) -> str:
     otherwise strips the markers.
     """
     if use_ansi:
-        formatted = re.sub(r"\*\*(.+?)\*\*", r"\033[1m\1\033[0m", text)
-        return re.sub(r"`(.+?)`", r"\033[36m\1\033[0m", formatted)
+        formatted = re.sub(r"\*\*(.+?)\*\*", "\033[1m\\1\033[0m", text)
+        return re.sub(r"`(.+?)`", "\033[36m\\1\033[0m", formatted)
     plain = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     return re.sub(r"`(.+?)`", r"\1", plain)
 # @cpt-end:cpt-cypilot-algo-kit-whatsnew-display:p1:inst-whatsnew-format
@@ -85,9 +85,13 @@ def read_whatsnew(path: Path) -> Dict[str, Dict[str, str]]:
         return {}
     try:
         import tomllib
+    except ModuleNotFoundError as e:
+        logger.debug("Failed to parse %s: %s", path, e)
+        return {}
+    try:
         with open(path, "rb") as f:
             data = tomllib.load(f)
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, tomllib.TOMLDecodeError) as e:
         logger.debug("Failed to parse %s: %s", path, e)
         return {}
 
@@ -185,8 +189,8 @@ def show_core_whatsnew(
     """
     # Find entries in cache that are missing from installed
     missing = sorted(
-        (v, cache_whatsnew[v]) for v in cache_whatsnew
-        if v not in installed_whatsnew
+        [(v, cache_whatsnew[v]) for v in cache_whatsnew if v not in installed_whatsnew],
+        key=lambda t: parse_semver(t[0]),
     )
     if not missing:
         return True
