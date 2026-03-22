@@ -472,14 +472,14 @@ class TestUpdateHelperExceptions(unittest.TestCase):
 
 
 # =========================================================================
-# _read_core_whatsnew / _show_core_whatsnew
+# read_whatsnew / show_core_whatsnew (moved to cypilot.utils.whatsnew)
 # =========================================================================
 
 class TestReadCoreWhatsnew(unittest.TestCase):
     """Tests for reading standalone whatsnew.toml."""
 
     def test_read_valid(self):
-        from cypilot.commands.update import _read_core_whatsnew
+        from cypilot.utils.whatsnew import read_whatsnew as _read_core_whatsnew
         with TemporaryDirectory() as td:
             p = Path(td) / "whatsnew.toml"
             p.write_text(
@@ -494,18 +494,18 @@ class TestReadCoreWhatsnew(unittest.TestCase):
             self.assertEqual(result["v3.0.5-beta"]["details"], "D2")
 
     def test_read_missing_file(self):
-        from cypilot.commands.update import _read_core_whatsnew
+        from cypilot.utils.whatsnew import read_whatsnew as _read_core_whatsnew
         self.assertEqual(_read_core_whatsnew(Path("/nonexistent/whatsnew.toml")), {})
 
     def test_read_corrupt_file(self):
-        from cypilot.commands.update import _read_core_whatsnew
+        from cypilot.utils.whatsnew import read_whatsnew as _read_core_whatsnew
         with TemporaryDirectory() as td:
             p = Path(td) / "whatsnew.toml"
             p.write_text("{{invalid", encoding="utf-8")
             self.assertEqual(_read_core_whatsnew(p), {})
 
     def test_read_skips_non_dict_entries(self):
-        from cypilot.commands.update import _read_core_whatsnew
+        from cypilot.utils.whatsnew import read_whatsnew as _read_core_whatsnew
         with TemporaryDirectory() as td:
             p = Path(td) / "whatsnew.toml"
             p.write_text(
@@ -517,12 +517,199 @@ class TestReadCoreWhatsnew(unittest.TestCase):
             self.assertEqual(len(result), 1)
             self.assertIn("v1.0", result)
 
+    def test_read_whatsnew_section_format(self):
+        """Test reading whatsnew.toml with [whatsnew."X.Y.Z"] format."""
+        from cypilot.utils.whatsnew import read_whatsnew
+        with TemporaryDirectory() as td:
+            p = Path(td) / "whatsnew.toml"
+            p.write_text(
+                '[whatsnew."1.2.0"]\nsummary = "New feature"\ndetails = "- Added X"\n\n'
+                '[whatsnew."1.3.0"]\nsummary = "Bug fix"\ndetails = "- Fixed Y"\n',
+                encoding="utf-8",
+            )
+            result = read_whatsnew(p)
+            self.assertEqual(len(result), 2)
+            self.assertIn("1.2.0", result)
+            self.assertIn("1.3.0", result)
+            self.assertEqual(result["1.2.0"]["summary"], "New feature")
+            self.assertEqual(result["1.3.0"]["details"], "- Fixed Y")
+
+
+class TestWhatsnewVersionParsing(unittest.TestCase):
+    """Tests for semver parsing and comparison in whatsnew module."""
+
+    def test_parse_semver_basic(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertEqual(parse_semver("1.2.3"), (1, 2, 3, 1))
+        self.assertEqual(parse_semver("0.0.1"), (0, 0, 1, 1))
+        self.assertEqual(parse_semver("10.20.30"), (10, 20, 30, 1))
+
+    def test_parse_semver_with_v_prefix(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertEqual(parse_semver("v1.2.3"), (1, 2, 3, 1))
+        self.assertEqual(parse_semver("v0.1.0"), (0, 1, 0, 1))
+
+    def test_parse_semver_with_whatsnew_prefix(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertEqual(parse_semver("whatsnew.1.2.3"), (1, 2, 3, 1))
+
+    def test_parse_semver_partial(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertEqual(parse_semver("1.2"), (1, 2, 0, 1))
+        self.assertEqual(parse_semver("1"), (1, 0, 0, 1))
+
+    def test_parse_semver_prerelease_does_not_collapse_to_zero(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertNotEqual(parse_semver("v3.0.4-beta"), (0, 0, 0))
+
+    def test_parse_semver_invalid(self):
+        from cypilot.utils.whatsnew import parse_semver
+        self.assertEqual(parse_semver("invalid"), (0, 0, 0))
+        self.assertEqual(parse_semver("a.b.c"), (0, 0, 0))
+        self.assertEqual(parse_semver(""), (0, 0, 0))
+
+    def test_compare_versions_less_than(self):
+        from cypilot.utils.whatsnew import compare_versions
+        self.assertEqual(compare_versions("1.0.0", "2.0.0"), -1)
+        self.assertEqual(compare_versions("1.0.0", "1.1.0"), -1)
+        self.assertEqual(compare_versions("1.0.0", "1.0.1"), -1)
+
+    def test_compare_versions_greater_than(self):
+        from cypilot.utils.whatsnew import compare_versions
+        self.assertEqual(compare_versions("2.0.0", "1.0.0"), 1)
+        self.assertEqual(compare_versions("1.1.0", "1.0.0"), 1)
+        self.assertEqual(compare_versions("1.0.1", "1.0.0"), 1)
+
+    def test_compare_versions_equal(self):
+        from cypilot.utils.whatsnew import compare_versions
+        self.assertEqual(compare_versions("1.0.0", "1.0.0"), 0)
+        self.assertEqual(compare_versions("v1.0.0", "1.0.0"), 0)
+
+    def test_compare_versions_prerelease_sorts_before_release(self):
+        from cypilot.utils.whatsnew import compare_versions
+        self.assertEqual(compare_versions("v3.0.4-beta", "v3.0.4"), -1)
+
+
+class TestShowKitWhatsnew(unittest.TestCase):
+    """Tests for kit-specific whatsnew display."""
+
+    def test_no_whatsnew_file_returns_true(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            result = show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=False)
+            self.assertTrue(result)
+
+    def test_no_new_entries_returns_true(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.0.0"]\nsummary = "Old"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            # installed version is same or newer
+            result = show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=False)
+            self.assertTrue(result)
+
+    def test_shows_new_entries(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.1.0"]\nsummary = "New feature"\ndetails = "- Added X"\n'
+                '[whatsnew."1.2.0"]\nsummary = "Bug fix"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with redirect_stderr(err):
+                result = show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=False)
+            self.assertTrue(result)
+            output = err.getvalue()
+            self.assertIn("What's new in test-kit kit", output)
+            self.assertIn("New feature", output)
+            self.assertIn("Bug fix", output)
+
+    def test_tty_ansi_formatting_plain_summary(self):
+        """Test ANSI formatting when summary has no markdown."""
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.1.0"]\nsummary = "Plain summary"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with patch("cypilot.utils.whatsnew.stderr_supports_ansi", return_value=True):
+                with redirect_stderr(err):
+                    show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=False)
+            output = err.getvalue()
+            # Should have ANSI bold around version and summary
+            self.assertIn("\033[1m1.1.0: Plain summary\033[0m", output)
+
+    def test_filters_old_versions(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.0.0"]\nsummary = "Old"\ndetails = ""\n'
+                '[whatsnew."1.2.0"]\nsummary = "New"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with redirect_stderr(err):
+                show_kit_whatsnew(kit_dir, "1.1.0", "test-kit", interactive=False)
+            output = err.getvalue()
+            self.assertNotIn("Old", output)
+            self.assertIn("New", output)
+
+    def test_missing_version_treated_as_zero(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."0.0.1"]\nsummary = "Initial"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with redirect_stderr(err):
+                result = show_kit_whatsnew(kit_dir, "", "test-kit", interactive=False)
+            self.assertTrue(result)
+            output = err.getvalue()
+            self.assertIn("Initial", output)
+
+    def test_interactive_q_aborts(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.1.0"]\nsummary = "New"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with patch("builtins.input", return_value="q"), redirect_stderr(err):
+                result = show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=True)
+            self.assertFalse(result)
+
+    def test_interactive_enter_continues(self):
+        from cypilot.utils.whatsnew import show_kit_whatsnew
+        with TemporaryDirectory() as td:
+            kit_dir = Path(td)
+            (kit_dir / "whatsnew.toml").write_text(
+                '[whatsnew."1.1.0"]\nsummary = "New"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with patch("builtins.input", return_value=""), redirect_stderr(err):
+                result = show_kit_whatsnew(kit_dir, "1.0.0", "test-kit", interactive=True)
+            self.assertTrue(result)
+
 
 class TestShowCoreWhatsnew(unittest.TestCase):
     """Tests for core whatsnew display and prompting."""
 
     def test_non_interactive_shows_missing(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.0.4": {"summary": "A", "details": "- d1"},
             "v3.0.5": {"summary": "B", "details": "- d2"},
@@ -537,7 +724,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertIn("B", output)
 
     def test_non_interactive_renders_bold_markdown_in_summary(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.2.0-beta": {
                 "summary": "Prompt **compactification** release",
@@ -554,7 +741,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("\033[1mcompactification\033[0m", output)
 
     def test_non_interactive_renders_bold_markdown_in_details(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.2.0-beta": {
                 "summary": "Prompt compactification",
@@ -571,7 +758,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("\033[1mAggressive\033[0m", output)
 
     def test_non_interactive_renders_inline_code_in_summary(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.2.0-beta": {
                 "summary": "Use `workflows/analyze.md` for compact analysis",
@@ -588,7 +775,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("\033[36mworkflows/analyze.md\033[0m", output)
 
     def test_non_interactive_renders_inline_code_in_details(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.2.0-beta": {
                 "summary": "Prompt compactification",
@@ -605,7 +792,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("\033[36mskills/cypilot/SKILL.md\033[0m", output)
 
     def test_non_interactive_tty_renders_ansi_markup(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.2.0-beta": {
                 "summary": "Prompt **compactification** release in `workflows/analyze.md`",
@@ -613,7 +800,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
             },
         }
         err = io.StringIO()
-        with patch("cypilot.commands.update._stderr_supports_ansi", return_value=True):
+        with patch("cypilot.utils.whatsnew.stderr_supports_ansi", return_value=True):
             with redirect_stderr(err):
                 result = _show_core_whatsnew(ref, {}, interactive=False)
         self.assertTrue(result)
@@ -621,9 +808,28 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertIn("\033[1mcompactification\033[0m", output)
         self.assertIn("\033[36mworkflows/analyze.md\033[0m", output)
 
+    def test_non_interactive_strips_control_chars_from_summary_and_details(self):
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
+        ref = {
+            "v3.2.0\x1b[2J": {
+                "summary": "Safe\x1b[31m summary",
+                "details": "- detail\x1b[2K\n- second\x07 line",
+            },
+        }
+        err = io.StringIO()
+        with redirect_stderr(err):
+            result = _show_core_whatsnew(ref, {}, interactive=False)
+        self.assertTrue(result)
+        output = err.getvalue()
+        self.assertIn("v3.2.0: Safe summary", output)
+        self.assertIn("- detail", output)
+        self.assertIn("- second line", output)
+        self.assertNotIn("\x1b", output)
+        self.assertNotIn("\x07", output)
+
     def test_filters_by_core_keys(self):
         """Only entries missing from .core/ whatsnew are shown."""
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {
             "v3.0.4": {"summary": "Old", "details": ""},
             "v3.0.5": {"summary": "New", "details": ""},
@@ -636,31 +842,44 @@ class TestShowCoreWhatsnew(unittest.TestCase):
         self.assertNotIn("Old", output)
         self.assertIn("New", output)
 
+    def test_missing_entries_are_sorted_semantically(self):
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
+
+        ref = {
+            "1.10.0": {"summary": "Tenth minor", "details": ""},
+            "1.9.0": {"summary": "Ninth minor", "details": ""},
+        }
+        err = io.StringIO()
+        with redirect_stderr(err):
+            _show_core_whatsnew(ref, {}, interactive=False)
+        output = err.getvalue()
+        self.assertLess(output.index("1.9.0"), output.index("1.10.0"))
+
     def test_all_seen_returns_true(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         same = {"v1": {"summary": "X", "details": ""}}
         self.assertTrue(_show_core_whatsnew(same, same, interactive=True))
 
     def test_empty_ref_returns_true(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         self.assertTrue(_show_core_whatsnew({}, {}, interactive=True))
 
     def test_enter_continues(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {"v1": {"summary": "X", "details": ""}}
         err = io.StringIO()
         with patch("builtins.input", return_value=""), redirect_stderr(err):
             self.assertTrue(_show_core_whatsnew(ref, {}, interactive=True))
 
     def test_q_aborts(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {"v1": {"summary": "X", "details": ""}}
         err = io.StringIO()
         with patch("builtins.input", return_value="q"), redirect_stderr(err):
             self.assertFalse(_show_core_whatsnew(ref, {}, interactive=True))
 
     def test_eof_aborts(self):
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {"v1": {"summary": "X", "details": ""}}
         err = io.StringIO()
         with patch("builtins.input", side_effect=EOFError), redirect_stderr(err):
@@ -668,7 +887,7 @@ class TestShowCoreWhatsnew(unittest.TestCase):
 
     def test_non_interactive_auto_continues(self):
         """Non-interactive mode (CI/non-TTY) must auto-continue without blocking."""
-        from cypilot.commands.update import _show_core_whatsnew
+        from cypilot.utils.whatsnew import show_core_whatsnew as _show_core_whatsnew
         ref = {"v1": {"summary": "X", "details": ""}}
         err = io.StringIO()
         with redirect_stderr(err):
@@ -812,6 +1031,93 @@ class TestCmdUpdateWhatsnew(unittest.TestCase):
                         rc = cmd_update(["--dry-run"])
                 self.assertEqual(rc, 0)
                 self.assertNotIn("What's new", err.getvalue())
+            finally:
+                os.chdir(cwd)
+
+    def test_update_shows_kit_whatsnew(self):
+        """Main cmd_update flow shows kit whatsnew before updating the kit."""
+        from cypilot.commands.update import cmd_update
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            cache_v1 = Path(td) / "cache_v1"
+            _make_cache(cache_v1, kit_version=1)
+            _init_project(root, cache_v1)
+
+            cache_v2 = Path(td) / "cache_v2"
+            _make_cache(cache_v2, kit_version=2)
+            (cache_v2 / "kits" / "sdlc" / "whatsnew.toml").write_text(
+                '[whatsnew."2.0.0"]\nsummary = "Kit update"\ndetails = "- Added feature"\n',
+                encoding="utf-8",
+            )
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                with patch("cypilot.commands.update.CACHE_DIR", cache_v2), \
+                     patch(
+                         "cypilot.commands.kit._read_kits_from_core_toml",
+                         return_value={"sdlc": {"path": "config/kits/sdlc"}},
+                     ), \
+                     patch("cypilot.commands.kit._read_kit_version_from_core", return_value="1"), \
+                     patch(
+                         "cypilot.commands.kit.update_kit",
+                         return_value={"version": {"status": "current"}, "gen": {"files_written": 0}},
+                     ) as mock_update, \
+                     patch("cypilot.commands.update.show_kit_whatsnew", return_value=True) as mock_show:
+                    buf = io.StringIO()
+                    err = io.StringIO()
+                    with redirect_stdout(buf), redirect_stderr(err):
+                        rc = cmd_update(["-y"])
+                self.assertEqual(rc, 0)
+                mock_show.assert_called()
+                mock_update.assert_called()
+            finally:
+                os.chdir(cwd)
+
+    def test_update_kit_whatsnew_abort_skips_kit_update(self):
+        """Aborting kit whatsnew in cmd_update skips that kit update."""
+        from cypilot.commands.update import cmd_update
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            cache_v1 = Path(td) / "cache_v1"
+            _make_cache(cache_v1, kit_version=1)
+            adapter = _init_project(root, cache_v1)
+            original_skill = (adapter / "config" / "kits" / "sdlc" / "SKILL.md").read_text(encoding="utf-8")
+
+            cache_v2 = Path(td) / "cache_v2"
+            _make_cache(cache_v2, kit_version=2)
+            (cache_v2 / "kits" / "sdlc" / "SKILL.md").write_text(
+                "# Kit sdlc\nUpdated skill instructions.\n",
+                encoding="utf-8",
+            )
+            (cache_v2 / "kits" / "sdlc" / "whatsnew.toml").write_text(
+                '[whatsnew."2.0.0"]\nsummary = "Kit update"\ndetails = ""\n',
+                encoding="utf-8",
+            )
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                with patch("cypilot.commands.update.CACHE_DIR", cache_v2), \
+                     patch(
+                         "cypilot.commands.kit._read_kits_from_core_toml",
+                         return_value={"sdlc": {"path": "config/kits/sdlc"}},
+                     ), \
+                     patch("cypilot.commands.kit._read_kit_version_from_core", return_value="1"), \
+                     patch("cypilot.commands.kit.update_kit") as mock_update, \
+                     patch("cypilot.commands.update.show_kit_whatsnew", return_value=False), \
+                     patch("sys.stdin") as mock_stdin:
+                    mock_stdin.isatty.return_value = True
+                    buf = io.StringIO()
+                    err = io.StringIO()
+                    with redirect_stdout(buf), redirect_stderr(err):
+                        rc = cmd_update([])
+                self.assertEqual(rc, 0)
+                mock_update.assert_not_called()
+                updated_skill = (adapter / "config" / "kits" / "sdlc" / "SKILL.md").read_text(encoding="utf-8")
+                self.assertEqual(updated_skill, original_skill)
             finally:
                 os.chdir(cwd)
 
