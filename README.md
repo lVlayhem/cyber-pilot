@@ -1,7 +1,7 @@
 # <p align="center"><img src="images/cypilot-kit.png" alt="Cypilot Banner" width="100%" /></p>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-3.3-green.svg)]()
 [![Status](https://img.shields.io/badge/status-active-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)]()
 
