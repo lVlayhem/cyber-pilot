@@ -970,6 +970,23 @@ def _caf_follow_targets(txt: str) -> List[str]:
     return [match.strip() for match in re.findall(r"ALWAYS open and follow `([^`]+)`", txt)]
 
 
+def _caf_target_refs_adapter_dir(
+    fpath: Path,
+    target: str,
+    project_root: Path,
+    adapter_path: str,
+) -> bool:
+    adapter_root = (project_root / adapter_path).resolve()
+    if "{" in target or "}" in target:
+        return False
+    try:
+        raw_target = Path(target)
+        resolved_target = (fpath.parent / raw_target).resolve() if not raw_target.is_absolute() else raw_target.resolve()
+    except Exception:
+        return False
+    return resolved_target == adapter_root or adapter_root in resolved_target.parents
+
+
 def _caf_has_adapter_dir_ref(
     fpath: Path,
     txt: str,
@@ -977,18 +994,45 @@ def _caf_has_adapter_dir_ref(
     adapter_path: str,
 ) -> bool:
     """Return True if *txt* contains an ALWAYS-open reference to the old adapter dir."""
-    adapter_root = (project_root / adapter_path).resolve()
     for target in _caf_follow_targets(txt):
-        if "{" in target or "}" in target:
-            continue
-        try:
-            raw_target = Path(target)
-            resolved_target = (fpath.parent / raw_target).resolve() if not raw_target.is_absolute() else raw_target.resolve()
-        except Exception:
-            continue
-        if resolved_target == adapter_root or adapter_root in resolved_target.parents:
+        if _caf_target_refs_adapter_dir(fpath, target, project_root, adapter_path):
             return True
     return False
+
+
+def _caf_strip_adapter_follow_targets(
+    fpath: Path,
+    txt: str,
+    project_root: Path,
+    adapter_path: str,
+) -> Tuple[str, int]:
+    kept: List[str] = []
+    removed_count = 0
+    for line in txt.splitlines(keepends=True):
+        match = re.search(r"ALWAYS open and follow `([^`]+)`", line)
+        if match is None or not _caf_target_refs_adapter_dir(
+            fpath, match.group(1).strip(), project_root, adapter_path,
+        ):
+            kept.append(line)
+            continue
+        removed_count += 1
+    return "".join(kept), removed_count
+
+
+def _caf_is_pure_adapter_proxy_text(txt: str) -> bool:
+    lines = txt.splitlines()
+    if lines and lines[0].strip() == "---":
+        frontmatter_end: Optional[int] = None
+        for idx in range(1, len(lines)):
+            if lines[idx].strip() == "---":
+                frontmatter_end = idx + 1
+                break
+        if frontmatter_end is not None:
+            lines = lines[frontmatter_end:]
+    content_lines = [line.strip() for line in lines if line.strip()]
+    if not content_lines:
+        return True
+    return all(line.startswith("#") for line in content_lines)
 
 
 def _caf_is_adapter_workflow_proxy(path: Path, project_root: Path, core_path: str) -> bool:
@@ -1030,7 +1074,7 @@ def _caf_scan_md_files(
     adapter_path: str,
     removed: List[str],
 ) -> None:
-    """Scan one agent directory and unlink stale adapter proxy/reference files."""
+    """Scan one agent directory and remove or rewrite stale adapter references."""
     for fpath in list(agent_dir.iterdir()):
         if not fpath.is_file():
             continue
@@ -1045,7 +1089,18 @@ def _caf_scan_md_files(
             logger.debug("Failed to read %s: %s", fpath, e)
             continue
         if _caf_has_adapter_dir_ref(fpath, txt, project_root, adapter_path):
-            _caf_safe_unlink(fpath, project_root, removed)
+            stripped_txt, removed_targets = _caf_strip_adapter_follow_targets(
+                fpath, txt, project_root, adapter_path,
+            )
+            if removed_targets == 0:
+                continue
+            if _caf_is_pure_adapter_proxy_text(stripped_txt):
+                _caf_safe_unlink(fpath, project_root, removed)
+                continue
+            try:
+                fpath.write_text(stripped_txt, encoding="utf-8")
+            except Exception as e:
+                logger.debug("Failed to rewrite %s: %s", fpath, e)
 
 
 def _cleanup_old_adapter_agent_files(
@@ -1295,6 +1350,18 @@ def _init_v3_dirs(
         ui.detail("expected", CACHE_DIR.as_posix())
         raise FileNotFoundError(f"Cypilot cache directory not found: {CACHE_DIR}")
 
+    if cypilot_dir.exists() and not cypilot_dir.is_dir():
+        raise RuntimeError(f"Migration target path exists and is not a directory: {cypilot_dir}")
+    if cypilot_dir.is_dir():
+        try:
+            if any(cypilot_dir.iterdir()):
+                raise RuntimeError(
+                    f"Migration target directory already exists and is non-empty: {cypilot_dir}. "
+                    "Refusing to overwrite an existing install dir."
+                )
+        except OSError as e:
+            raise RuntimeError(f"Failed to inspect migration target directory {cypilot_dir}: {e}") from e
+
     cypilot_dir.mkdir(parents=True, exist_ok=True)
     config_dir.mkdir(parents=True, exist_ok=True)
     gen_dir = cypilot_dir / GEN_SUBDIR
@@ -1508,6 +1575,10 @@ def _cleanup_v2_adapter(
     _report_removed_paths("V2 artifacts cleaned up", removed_v2_files)
     # @cpt-end:cpt-cypilot-flow-v2-v3-migration-migrate-project:p1:inst-cleanup-adapter
 
+    if json_convert_failed:
+        ui.warn("Skipping old adapter agent file cleanup because the preserved v2 adapter remains a fallback.")
+        return
+
     adapter_removed = _cleanup_old_adapter_agent_files(project_root, adapter_path, core_path)
     if adapter_removed:
         _report_removed_paths(
@@ -1542,10 +1613,10 @@ def _finalize_migration_outputs(
             "--cypilot-root", str(cypilot_dir),
             "-y",
         ])
-        if rc:
-            all_warnings.append(f"Agent entry point regeneration failed (exit code {rc})")
     except Exception as e:
-        all_warnings.append(f"Agent entry point regeneration failed: {e}")
+        raise RuntimeError(f"Agent entry point regeneration failed: {e}") from e
+    if rc:
+        raise RuntimeError(f"Agent entry point regeneration failed (exit code {rc})")
     # @cpt-end:cpt-cypilot-flow-v2-v3-migration-migrate-project:p1:inst-regen-agent-entries
 
 

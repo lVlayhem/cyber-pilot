@@ -334,6 +334,54 @@ def _serialize_manifest_binding_path(target_path: Any, cypilot_dir: Path) -> str
         return _normalize_path_string(target_str)
 
 
+def _extract_registered_binding_path(binding: Any) -> Optional[str]:
+    binding_path = binding.get("path") if isinstance(binding, dict) else binding
+    if not isinstance(binding_path, str) or not binding_path.strip():
+        return None
+    return _normalize_path_string(binding_path)
+
+
+def _resolve_registered_metadata_target_for_name(
+    cypilot_dir: Path,
+    binding_paths: List[str],
+    target_name: str,
+) -> Optional[Tuple[Path, str]]:
+    for binding_rel in binding_paths:
+        if PurePosixPath(binding_rel).name != target_name:
+            continue
+        binding_abs = _resolve_registered_kit_dir(cypilot_dir, binding_rel)
+        if binding_abs is None or not binding_abs.is_file():
+            continue
+        binding_root = PurePosixPath(binding_rel).parent.as_posix()
+        return binding_abs.parent, "" if binding_root == "." else binding_root
+    return None
+
+
+def _resolve_registered_metadata_target_from_resources(
+    cypilot_dir: Path,
+    resources: Any,
+) -> Optional[Tuple[Path, str]]:
+    if not isinstance(resources, dict):
+        return None
+    binding_paths = [
+        binding_path
+        for binding_path in (
+            _extract_registered_binding_path(binding)
+            for binding in resources.values()
+        )
+        if binding_path is not None
+    ]
+    for target_name in (_KIT_SKILL_FILE, _KIT_AGENTS_FILE):
+        metadata_target = _resolve_registered_metadata_target_for_name(
+            cypilot_dir,
+            binding_paths,
+            target_name,
+        )
+        if metadata_target is not None:
+            return metadata_target
+    return None
+
+
 def _resolve_registered_kit_metadata_target(
     cypilot_dir: Path,
     kit_slug: str,
@@ -351,20 +399,12 @@ def _resolve_registered_kit_metadata_target(
     ):
         return kit_dir, kit_rel_path
 
-    resources = kit_data.get("resources", {})
-    if isinstance(resources, dict):
-        for target_name in (_KIT_SKILL_FILE, _KIT_AGENTS_FILE):
-            for binding in resources.values():
-                binding_path = binding.get("path") if isinstance(binding, dict) else binding
-                if not isinstance(binding_path, str) or not binding_path.strip():
-                    continue
-                binding_rel = _normalize_path_string(binding_path)
-                if PurePosixPath(binding_rel).name != target_name:
-                    continue
-                binding_abs = _resolve_registered_kit_dir(cypilot_dir, binding_rel)
-                if binding_abs is not None and binding_abs.is_file():
-                    binding_root = PurePosixPath(binding_rel).parent.as_posix()
-                    return binding_abs.parent, "" if binding_root == "." else binding_root
+    metadata_target = _resolve_registered_metadata_target_from_resources(
+        cypilot_dir,
+        kit_data.get("resources", {}),
+    )
+    if metadata_target is not None:
+        return metadata_target
 
     return kit_dir, kit_rel_path
 
@@ -1325,22 +1365,31 @@ def _resolve_github_update_targets(
         except RuntimeError as exc:
             msg = f"Kit '{slug}': download failed: {exc}"
             ui.warn(msg)
-            failures.append({"kit": slug, "action": "ERROR", "message": msg, "source": source_str})
+            failures.append({"kit": slug, "action": "failed", "message": msg, "source": source_str})
     return targets, failures
 # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-resolve-github-targets
 
 
 # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-build-update-result
+def _normalize_kit_update_action(action: Any) -> str:
+    normalized = str(action or "").strip().lower()
+    if normalized in {"error", "fail", "failed"}:
+        return "failed"
+    return normalized
+
+
 def _build_kit_update_result(kit_slug: str, kit_r: Dict[str, Any]) -> Dict[str, Any]:
     """Extract a normalised result entry from update_kit() output."""
     ver = kit_r.get("version", {})
-    ver_status = ver.get("status", "") if isinstance(ver, dict) else str(ver)
+    ver_status = _normalize_kit_update_action(
+        ver.get("status", "") if isinstance(ver, dict) else str(ver),
+    )
     gen = kit_r.get("gen", {})
     accepted = gen.get("accepted_files", []) if isinstance(gen, dict) else []
     declined = kit_r.get("gen_rejected", [])
     files_written = gen.get("files_written", 0) if isinstance(gen, dict) else 0
     unchanged = gen.get("unchanged", 0) if isinstance(gen, dict) else 0
-    return {
+    result = {
         "kit": kit_slug,
         "action": ver_status,
         "accepted": accepted,
@@ -1348,6 +1397,9 @@ def _build_kit_update_result(kit_slug: str, kit_r: Dict[str, Any]) -> Dict[str, 
         "files_written": files_written,
         "unchanged": unchanged,
     }
+    if kit_r.get("errors"):
+        result["errors"] = list(kit_r.get("errors", []))
+    return result
 # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-build-update-result
 
 
@@ -1457,7 +1509,11 @@ def cmd_kit_update(argv: List[str]) -> int:
     errors: List[str] = []
 
     for sf in source_failures:
-        all_results.append(sf)
+        normalized_source_failure = dict(sf)
+        normalized_source_failure["action"] = _normalize_kit_update_action(
+            normalized_source_failure.get("action"),
+        )
+        all_results.append(normalized_source_failure)
         errors.append(f"{sf['kit']}: {sf['message']}")
 
     for kit_slug, kit_source, github_source, tmp_dir in update_targets:
@@ -1495,24 +1551,36 @@ def cmd_kit_update(argv: List[str]) -> int:
             )
             # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-legacy-migration
         except Exception as exc:
-            kit_r = {"kit": kit_slug, "version": {"status": "ERROR"}, "gen": {}}
+            kit_r = {"kit": kit_slug, "version": {"status": "failed"}, "gen": {}}
             errors.append(f"{kit_slug}: {exc}")
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
+        if kit_r.get("errors"):
+            errors.extend(f"{kit_slug}: {err}" for err in kit_r.get("errors", []))
         all_results.append(_build_kit_update_result(kit_slug, kit_r))
     # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-delegate-update
 
     # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
-    if not args.dry_run:
+    has_failed_updates = any(
+        _normalize_kit_update_action(r.get("action")) == "failed"
+        for r in all_results
+    )
+    if not args.dry_run and not has_failed_updates:
         regenerate_gen_aggregates(cypilot_dir)
     # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-regen-gen
 
     # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-format-output
-    n_updated = sum(1 for r in all_results if r["action"] not in ("current", "dry_run", "ERROR", "aborted"))
+    n_updated = sum(
+        1
+        for r in all_results
+        if _normalize_kit_update_action(r.get("action"))
+        not in ("current", "dry_run", "aborted", "failed")
+    )
+    command_failed = has_failed_updates
     output: Dict[str, Any] = {
-        "status": "PASS" if not errors else "WARN",
+        "status": "FAIL" if command_failed else ("PASS" if not errors else "WARN"),
         "kits_updated": n_updated,
         "results": all_results,
     }
@@ -1522,10 +1590,7 @@ def cmd_kit_update(argv: List[str]) -> int:
         output["message"] = "All kits are up to date"
 
     ui.result(output, human_fn=lambda d: _human_kit_update(d))
-    all_failed = bool(errors) and n_updated == 0 and all(
-        r.get("action") in ("ERROR", "aborted") for r in all_results
-    )
-    return 1 if all_failed else 0
+    return 2 if command_failed else 0
     # @cpt-end:cpt-cypilot-flow-kit-update-cli:p1:inst-format-output
 
 # @cpt-begin:cpt-cypilot-flow-kit-update-cli:p1:inst-human-output
@@ -1630,7 +1695,6 @@ def _restore_existing_config_kit(config_backup: Path, config_kit: Path) -> None:
 def _migrate_single_kits_dir_entry(
     kit_dir: Path,
     config_kits: Path,
-    kits_dir: Path,
     backup_dir: Path,
 ) -> str:
     """Copy one kits/{slug}/ entry into config/kits/{slug}/, with backup/rollback.
@@ -1782,7 +1846,7 @@ def _detect_and_migrate_layout(
             if dry_run:
                 migrated[slug] = "would_migrate"
                 continue
-            migrated[slug] = _migrate_single_kits_dir_entry(kit_dir, config_kits, kits_dir, backup_dir)
+            migrated[slug] = _migrate_single_kits_dir_entry(kit_dir, config_kits, backup_dir)
     # @cpt-end:cpt-cypilot-algo-version-config-layout-restructure:p1:inst-layout-backup
 
     # @cpt-begin:cpt-cypilot-algo-version-config-layout-restructure:p1:inst-layout-move-gen
@@ -1882,6 +1946,33 @@ def _perform_first_install_kit(
 # @cpt-end:cpt-cypilot-algo-kit-update:p1:inst-perform-first-install
 
 
+def _resolve_manifest_root_from_binding(
+    binding_path: Optional[str],
+    default_path: str,
+) -> Optional[str]:
+    if not isinstance(binding_path, str) or not binding_path.strip():
+        return None
+    binding_parts = PurePosixPath(binding_path).parts
+    default_parts = PurePosixPath(default_path).parts
+    if len(binding_parts) < len(default_parts):
+        return None
+    if tuple(binding_parts[-len(default_parts):]) != tuple(default_parts):
+        return None
+    prefix_parts = binding_parts[:-len(default_parts)]
+    if prefix_parts:
+        return PurePosixPath(*prefix_parts).as_posix()
+    return ""
+
+
+def _resolve_declared_manifest_root(manifest: Any, kit_slug: str) -> str:
+    manifest_root = getattr(manifest, "root", "")
+    if isinstance(manifest_root, str) and manifest_root.strip():
+        resolved_root = manifest_root.replace("{cypilot_path}", ".").replace("{slug}", kit_slug).strip()
+        if resolved_root and resolved_root != ".":
+            return PurePosixPath(resolved_root).as_posix()
+    return f"config/kits/{kit_slug}"
+
+
 def _resolve_manifest_kit_root_rel(
     manifest: Any,
     merged: Dict[str, Dict[str, str]],
@@ -1890,26 +1981,11 @@ def _resolve_manifest_kit_root_rel(
     for res in getattr(manifest, "resources", []):
         binding = merged.get(res.id, {})
         binding_path = binding.get("path") if isinstance(binding, dict) else None
-        if not isinstance(binding_path, str) or not binding_path.strip():
-            continue
-        binding_parts = PurePosixPath(binding_path).parts
-        default_parts = PurePosixPath(res.default_path).parts
-        if len(binding_parts) < len(default_parts):
-            continue
-        if tuple(binding_parts[-len(default_parts):]) != tuple(default_parts):
-            continue
-        prefix_parts = binding_parts[:-len(default_parts)]
-        if prefix_parts:
-            return PurePosixPath(*prefix_parts).as_posix()
-        return ""
+        binding_root = _resolve_manifest_root_from_binding(binding_path, res.default_path)
+        if binding_root is not None:
+            return binding_root
 
-    manifest_root = getattr(manifest, "root", "")
-    if isinstance(manifest_root, str) and manifest_root.strip():
-        resolved_root = manifest_root.replace("{cypilot_path}", ".").replace("{slug}", kit_slug).strip()
-        if resolved_root and resolved_root != ".":
-            return PurePosixPath(resolved_root).as_posix()
-        return f"config/kits/{kit_slug}"
-    return f"config/kits/{kit_slug}"
+    return _resolve_declared_manifest_root(manifest, kit_slug)
 
 
 # @cpt-begin:cpt-cypilot-algo-kit-update:p1:inst-sync-manifest-bindings
@@ -1980,8 +2056,6 @@ def update_kit(
     """
     # @cpt-begin:cpt-cypilot-algo-kit-update:p1:inst-resolve-config
     config_dir = cypilot_dir / "config"
-    config_kits_dir = config_dir / "kits"
-    config_kit_dir = config_kits_dir / kit_slug
 
     result: Dict[str, Any] = {"kit": kit_slug}
     # @cpt-end:cpt-cypilot-algo-kit-update:p1:inst-resolve-config
@@ -2061,8 +2135,14 @@ def update_kit(
             build_source_to_resource_mapping,
             resolve_resource_bindings,
         )
-        _source_to_resource_id, _resource_info = build_source_to_resource_mapping(source_dir)
-        _resource_bindings = resolve_resource_bindings(config_dir, kit_slug, cypilot_dir)
+        try:
+            _source_to_resource_id, _resource_info = build_source_to_resource_mapping(source_dir)
+            _resource_bindings = resolve_resource_bindings(config_dir, kit_slug, cypilot_dir)
+        except ValueError as exc:
+            result["version"] = {"status": "failed"}
+            result["gen"] = {"files_written": 0}
+            result["errors"] = [str(exc)]
+            return result
     # @cpt-end:cpt-cypilot-algo-kit-update:p1:inst-resolve-resource-bindings
 
     # @cpt-begin:cpt-cypilot-algo-kit-update:p1:inst-first-install

@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 from .artifacts_meta import Artifact, ArtifactsMeta, CodebaseEntry, Kit, load_artifacts_meta
 from .constraints import KitConstraints, error, load_constraints_toml
 
+_CONSTRAINTS_FILE = "constraints.toml"
+
 @dataclass
 class LoadedKit:
     """A kit with all its templates loaded."""
@@ -183,7 +185,7 @@ def _resolve_loaded_kit_constraints_path(
         )
     if kit_root is None:
         return None
-    return (kit_root / "constraints.toml").resolve()
+    return (kit_root / _CONSTRAINTS_FILE).resolve()
 
 
 def _load_single_kit(kit_id, kit, adapter_dir, project_root):
@@ -191,8 +193,7 @@ def _load_single_kit(kit_id, kit, adapter_dir, project_root):
     templates = {}
 
     kit_root = _resolve_loaded_kit_root(adapter_dir, project_root, str(kit.path or ""))
-    if kit_root is None:
-        kit_root = adapter_dir.resolve()
+    errors = []
     # @cpt-begin:cpt-cypilot-algo-core-infra-context-loading:p1:inst-ctx-load-resource-bindings
     rb = None
     _resolved_bindings = {}
@@ -204,31 +205,38 @@ def _load_single_kit(kit_id, kit, adapter_dir, project_root):
         _resolved_bindings = _resolve_rb(cfg_dir, kit_id, adapter_dir)
         if _resolved_bindings:
             rb = {k: str(v) for k, v in _resolved_bindings.items()}
-    except (OSError, ImportError, ValueError) as exc:
+    except ValueError as exc:
+        errors.append(error(
+            "resources",
+            str(exc),
+            path=(cfg_dir / "core.toml"),
+            line=1,
+            kit=kit_id,
+        ))
+    except (OSError, ImportError) as exc:
         sys.stderr.write(f"context: failed to load resource bindings for kit {kit_id}: {exc}\n")
     # @cpt-end:cpt-cypilot-algo-core-infra-context-loading:p1:inst-ctx-load-resource-bindings
 
     kit_constraints = None
     constraints_errs = []
     # @cpt-begin:cpt-cypilot-algo-core-infra-context-loading:p1:inst-constraints-from-binding
-    _constraints_root = kit_root
-    resolved_constraints_path = None
+    _constraints_root: Optional[Path] = kit_root if isinstance(kit_root, Path) else None
+    resolved_constraints_path: Optional[Path] = None
     if _resolved_bindings and "constraints" in _resolved_bindings:
         _constraints_path = _resolved_bindings["constraints"]
         if _constraints_path.is_file():
             _constraints_root = _constraints_path.parent
             resolved_constraints_path = _constraints_path.resolve()
     # @cpt-end:cpt-cypilot-algo-core-infra-context-loading:p1:inst-constraints-from-binding
-    if _constraints_root.is_dir():
+    if _constraints_root is not None and _constraints_root.is_dir():
         kit_constraints, constraints_errs = load_constraints_toml(_constraints_root)
-    elif kit_root.is_dir():
-        kit_constraints, constraints_errs = load_constraints_toml(kit_root)
-    if resolved_constraints_path is None and _constraints_root.is_dir():
-        resolved_constraints_path = (_constraints_root / "constraints.toml").resolve()
+    if resolved_constraints_path is None and _constraints_root is not None and _constraints_root.is_dir():
+        resolved_constraints_path = (_constraints_root / _CONSTRAINTS_FILE).resolve()
 
-    errors = []
     if constraints_errs:
-        constraints_path = resolved_constraints_path or (kit_root / "constraints.toml").resolve()
+        constraints_path = resolved_constraints_path
+        if constraints_path is None and _constraints_root is not None:
+            constraints_path = (_constraints_root / _CONSTRAINTS_FILE).resolve()
         errors.append(error(
             "constraints",
             "Invalid constraints.toml",

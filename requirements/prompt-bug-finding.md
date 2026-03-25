@@ -51,7 +51,7 @@ Focus first on instructions most likely to create high-impact failures.
 Extract what the instruction system requires before, during, and after execution.
 
 - Preconditions: required files, loaded context, available tools, user approvals, mode flags, and environmental assumptions.
-- Postconditions: allowed outputs, required evidence, mandatory validation, required follow-up actions, and stop conditions.
+- Postconditions: allowed outputs, required evidence, mandatory validation, required follow-up actions, response-completion gates, required terminal blocks or handoff prompts, required terminal block ordering, and stop conditions.
 - Authority invariants: what the agent may do, must not do, and must ask before doing.
 - Routing invariants: which request types trigger which workflow, dependency, or branch, and which branches are mutually exclusive.
 - State invariants: what must survive across turns, checkpoints, compaction, retries, and resumptions.
@@ -65,6 +65,7 @@ Extract what the instruction system requires before, during, and after execution
 Trace how prompt bugs appear when execution leaves the happy path.
 
 - Walk the main path, then examine ambiguous requests, overlapping triggers, missing prerequisites, missing files, denied permissions, tool failure, validation failure, and partial completion.
+- Check completion branches explicitly: look for workflows that can stop after a summary, validator report, next-step menu, or checkpoint-looking block even though required final prompts, handoff blocks, or final response sections are still missing.
 - Check precedence: what happens when two rules apply, when a global rule conflicts with a conditional rule, or when recovery text contradicts the normal path.
 - For multi-turn workflows, inspect stale assumptions, state loss after compaction, resumed execution without re-validation, and incorrect carryover from prior turns.
 - For dependency-driven prompts, inspect circular loading, missing gating, unconditional loading, hidden required dependencies, and dependency-order bugs.
@@ -80,6 +81,7 @@ Apply the same defect lenses regardless of prompt style.
 | Trigger & gating | Missing `WHEN`, overlapping triggers, wrong branch, unconditional load, branch with no exit |
 | Missing precondition | Prompt assumes files, tools, memory, approvals, or context that may not exist |
 | Output contract | Missing schema, incomplete format, no evidence requirement, success criteria unclear |
+| Completion & finalization gate | False completion criteria, response can end after summary/validation/next steps, required terminal blocks or handoff prompts missing, final block ordering unspecified |
 | Tool-use & safety boundary | Writes before confirmation, unsafe action path, missing approval, invalid tool sequence |
 | Context & compaction | Critical rule dropped, oversized always-on text, missing summarize-and-drop, compaction loses invariants |
 | Memory & state | Implicit state, missing checkpoint, stale carryover, resume path skips re-checks |
@@ -208,5 +210,6 @@ Review is complete when:
 - [ ] Missing proof was converted into a concrete dynamic validation step
 - [ ] Review status, deterministic gate state, environment snapshot, coverage summary, and decisive dependency outcomes were reported explicitly
 - [ ] Loaded dependency slices were bounded as contiguous TOC/section/range reads, any dependency concluded non-material was backed by inspected-slice proof, and any unresolved hotspot-relevant normative effect forced `PARTIAL` instead of `PASS`
+- [ ] For workflows or instructions with required terminal outputs, completion gates, required handoff blocks, and terminal block ordering were checked explicitly
 - [ ] Confidence and residual uncertainty were reported explicitly
 - [ ] No claim of `100%` detection or blanket coverage was made

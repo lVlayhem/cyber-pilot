@@ -11,26 +11,25 @@ purpose: Universal workflow for creating or updating any artifact or code
 
 <!-- toc -->
 
-- [Generate](#generate)
-  - [Reverse Engineering Prerequisite (BROWNFIELD only)](#reverse-engineering-prerequisite-brownfield-only)
-  - [Overview](#overview)
-  - [Context Budget \& Overflow Prevention (CRITICAL)](#context-budget--overflow-prevention-critical)
-  - [Agent Anti-Patterns (STRICT mode)](#agent-anti-patterns-strict-mode)
-  - [Rules Mode Behavior](#rules-mode-behavior)
-  - [Phase 0: Ensure Dependencies](#phase-0-ensure-dependencies)
-  - [Phase 0.1: Plan Escalation Gate](#phase-01-plan-escalation-gate)
-  - [Phase 0.5: Clarify Output \& Context](#phase-05-clarify-output--context)
-  - [Phase 1: Collect Information](#phase-1-collect-information)
-  - [Phase 2: Generate](#phase-2-generate)
-  - [Phase 2.5: Checkpoint (for long artifacts)](#phase-25-checkpoint-for-long-artifacts)
-  - [Phase 3: Summary](#phase-3-summary)
-  - [Phase 4: Write](#phase-4-write)
-  - [Phase 5: Analyze](#phase-5-analyze)
-    - [Step 1: Deterministic Validation (tool-based)](#step-1-deterministic-validation-tool-based)
-  - [Phase 6: Offer Next Steps](#phase-6-offer-next-steps)
-  - [Error Handling](#error-handling)
-  - [State Summary](#state-summary)
-  - [Validation Criteria](#validation-criteria)
+- [Reverse Engineering Prerequisite (BROWNFIELD only)](#reverse-engineering-prerequisite-brownfield-only)
+- [Overview](#overview)
+- [Context Budget & Overflow Prevention (CRITICAL)](#context-budget--overflow-prevention-critical)
+- [Agent Anti-Patterns (STRICT mode)](#agent-anti-patterns-strict-mode)
+- [Rules Mode Behavior](#rules-mode-behavior)
+- [Phase 0: Ensure Dependencies](#phase-0-ensure-dependencies)
+- [Phase 0.1: Plan Escalation Gate](#phase-01-plan-escalation-gate)
+- [Phase 0.5: Clarify Output & Context](#phase-05-clarify-output--context)
+- [Phase 1: Collect Information](#phase-1-collect-information)
+- [Phase 2: Generate](#phase-2-generate)
+- [Phase 2.5: Checkpoint (for long artifacts)](#phase-25-checkpoint-for-long-artifacts)
+- [Phase 3: Summary](#phase-3-summary)
+- [Phase 4: Write](#phase-4-write)
+- [Phase 5: Analyze](#phase-5-analyze)
+  - [Step 1: Deterministic Validation (tool-based)](#step-1-deterministic-validation-tool-based)
+- [Phase 6: Offer Next Steps](#phase-6-offer-next-steps)
+- [Error Handling](#error-handling)
+- [State Summary](#state-summary)
+- [Validation Criteria](#validation-criteria)
 
 <!-- /toc -->
 
@@ -250,13 +249,15 @@ Only after confirmation: update `{cypilot_path}/config/artifacts.toml` if a new 
 
 ## Phase 5: Analyze
 
-Attempt deterministic validation automatically after generation; do not list it in Next Steps. STRICT mode requires validation `PASS` before Phase 6. RELAXED mode may exit with an explicitly unvalidated result only through the Error Handling recovery branch.
+Attempt deterministic validation automatically after generation; do not list it in Next Steps. STRICT mode requires validation `PASS` before Phase 6. RELAXED mode may exit with an explicitly unvalidated result either because no target-applicable deterministic validator exists for the current written output (`Deterministic gate: SKIPPED`) or through the Error Handling recovery branch after repeated validation failure (`Deterministic gate: FAIL`).
 
 > **⛔ CRITICAL**: The agent's own checklist walkthrough is **NOT** a substitute for the applicable deterministic validator command(s). A manual "✅ PASS" table in chat is semantic review, not deterministic validation — these are **separate steps**. See anti-pattern `SIMULATED_VALIDATION`.
 
 ### Step 1: Deterministic Validation (tool-based)
 
 MUST run deterministic validation as an actual terminal command using the canonical agent-safe form.
+
+Deterministic gate is available only when the current Cypilot configuration and current written output support a canonical validator invocation for this target. Treat availability as proven by active config plus CLI support for the concrete validator command(s) selected for the current output; do **not** infer availability or non-availability from kit prose, examples, `format` labels, or the absence of an exact example in this workflow. Before taking a RELAXED `Deterministic gate: SKIPPED` path, MUST record `Validator availability proof` showing which canonical validator route(s) were checked for the current target (for example project-wide `validate`, artifact-scoped `validate --artifact {PATH}`, `validate-toc {PATH}`, or another deterministic validator explicitly required by the current target) and why none is target-applicable for the current written output.
 
 Artifacts:
 
@@ -270,27 +271,34 @@ Specific artifact:
 {cpt_cmd} --json validate --artifact {PATH}
 ```
 
-Rules: execute the deterministic validator BEFORE any semantic review; choose the target-applicable deterministic validator command(s) for the current output and rules (for example `{cpt_cmd} --json validate`, `{cpt_cmd} --json validate --artifact {PATH}`, `{cpt_cmd} --json validate-toc {PATH}`, or another deterministic validator explicitly required by the current target); record the exact deterministic validator command(s) executed, including subcommand and path flags, plus each command's actual validator exit code and JSON `status` / `error_count` / `warning_count`; record the overall deterministic gate result across the full required validator set; if deterministic validation is skipped in the RELAXED/unvalidated recovery branch, record `Deterministic gate: SKIPPED`, an explicit skip reason, and an explicit note that there is no validator-backed evidence because no deterministic validator command completed; in STRICT mode, MUST NOT proceed to Phase 6 until all applicable deterministic validator command(s) for the current target have been run and the overall deterministic gate is `PASS`; MUST NOT summarize validation without the actual validator output, omit which validator command produced each result, or collapse a mixed-result validator set into a single untraceable line. If FAIL → fix errors → re-run until PASS. Repeated validation failure is a recovery branch, not a PASS substitute.
+Workflow / instruction Markdown file with TOC requirements:
 
- Only after PASS: load `checklist.md` if it was not already loaded, then self-review generated content against it, verify no placeholders (`TODO`, `TBD`, `FIXME`), verify cross-references are meaningful, and verify content quality/completeness.
+```bash
+{cpt_cmd} --json validate-toc {PATH}
+```
 
- Validation Results body below is the single authoritative sub-contract for deterministic validation metadata. Whenever this workflow requires validation results to be embedded elsewhere, paste the completed body verbatim with actual values instead of rewriting the fields.
+Rules: execute the deterministic validator BEFORE any semantic review; choose the target-applicable deterministic validator command(s) for the current output and rules (for example `{cpt_cmd} --json validate`, `{cpt_cmd} --json validate --artifact {PATH}`, `{cpt_cmd} --json validate-toc {PATH}`, or another deterministic validator explicitly required by the current target); use `{cpt_cmd} --json validate-toc {PATH}` as the canonical deterministic validator for workflow / instruction Markdown files when TOC validation applies, and MUST NOT classify that target as having no target-applicable deterministic validator while that route exists; treat `{cpt_cmd} --json validate --artifact {PATH}` as artifact-scoped only when the current file is a registered artifact target; record the exact deterministic validator command(s) executed, including subcommand and path flags, plus each command's actual validator exit code and JSON `status` / `error_count` / `warning_count`; record the overall deterministic gate result across the full required validator set; if no target-applicable deterministic validator exists for the current written output and RELAXED mode takes the explicitly unvalidated path, record `Deterministic gate: SKIPPED`, explicit `Validator availability proof`, explicit `Skip reason`, and an explicit `Validator-backed evidence note` that no deterministic validator command completed; if RELAXED recovery stops after repeated validation failure, record the actual failing command results and `Deterministic gate: FAIL`; in STRICT mode, MUST NOT proceed to Phase 6 until all applicable deterministic validator command(s) for the current target have been run and the overall deterministic gate is `PASS`; MUST NOT summarize validation without the actual validator output, omit which validator command produced each result, collapse a mixed-result validator set into a single untraceable line, or claim that no validator was target-applicable without the required validator-availability proof. If FAIL → fix errors → re-run until PASS. Repeated validation failure is a recovery branch, not a PASS substitute.
+
+Only after PASS: load `checklist.md` if it was not already loaded, then self-review generated content against it, verify no placeholders (`TODO`, `TBD`, `FIXME`), verify cross-references are meaningful, and verify content quality/completeness.
+
+Validation Results body below is the single authoritative sub-contract for deterministic validation metadata. Whenever this workflow requires validation results to be embedded elsewhere, paste the completed body verbatim with actual values instead of rewriting the fields; include the conditional `SKIPPED`-only lines only when the deterministic gate is `SKIPPED`.
 
 ```markdown
- ## Validation Results
- Deterministic validator command(s): `{exact command(s) run}` | `none; skipped before execution`
- Deterministic validator results:
+## Validation Results
+Deterministic validator command(s): `{exact command(s) run}` | `none; skipped before execution`
+Deterministic validator results:
 - `{command 1}` → exit code {actual exit code}, status {actual JSON status}, errors {N}, warnings {N}
 - `{command N}` → exit code {actual exit code}, status {actual JSON status}, errors {N}, warnings {N}
-- `skipped before execution` → no deterministic validator command executed; use this line instead of command bullets when deterministic validation was skipped
- Deterministic gate: {PASS|FAIL|SKIPPED}; overall result across all required validator command(s)
- Skip reason: {`not applicable` | `why deterministic validation was skipped`}
- Validator-backed evidence note: {`validator-backed evidence present for the executed command(s) above` | `none; deterministic validation was skipped, so there is no validator-backed evidence`}
- Semantic review basis: {`static/manual only; no validator-backed semantic checker exists` | `validator-backed by {tool}` | `hybrid: validator-backed by {tool} + manual checklist review`}
- Semantic Review: checklist coverage {summary}; content quality {summary}; issues found {list or "none"}
- ```
+- `skipped before execution` → no deterministic validator command executed; include this line only when deterministic validation was skipped
+Deterministic gate: {PASS|FAIL|SKIPPED}; overall result across all required validator command(s)
+Validator availability proof (SKIPPED only): {canonical validator route(s) checked and why none is target-applicable for the current written output}
+Skip reason (SKIPPED only): {why deterministic validation was skipped}
+Validator-backed evidence note (SKIPPED only): {`none; deterministic validation was skipped, so there is no validator-backed evidence`}
+Semantic review basis: {`static/manual only; no validator-backed semantic checker exists` | `validator-backed by {tool}` | `hybrid: validator-backed by {tool} + manual checklist review`}
+Semantic Review: checklist coverage {summary}; content quality {summary}; issues found {list or "none"}
+```
 
- If deterministic validation passes and semantic review passes: proceed to Phase 6. If semantic issues are found: fix them and re-validate from the validator step. If deterministic validation cannot reach PASS after recovery attempts, follow Error Handling: STRICT mode stops here; RELAXED mode may only exit with an explicitly unvalidated result and MUST NOT present it as PASS.
+If deterministic validation passes and semantic review passes: proceed to Phase 6. If no target-applicable deterministic validator exists for the current written output, STRICT mode stops here; RELAXED mode may proceed only on an explicitly unvalidated `Deterministic gate: SKIPPED` path with explicit `Validator availability proof`, `Skip reason`, and `Validator-backed evidence note`. If semantic issues are found: fix them and re-validate from the validator step. If deterministic validation cannot reach PASS after recovery attempts, follow Error Handling: STRICT mode stops here; RELAXED mode may only exit with an explicitly unvalidated `Deterministic gate: FAIL` result and MUST NOT present it as PASS. If Phase 4 wrote or updated any files before either RELAXED explicitly unvalidated exit, Phase 6 still applies and the response remains incomplete until both `Plan Review Prompt` and `Direct Review Prompt` blocks are emitted.
 
 ## Phase 6: Offer Next Steps
 
@@ -300,25 +308,33 @@ Read `## Next Steps` from `rules.md` and present:
 What would you like to do next?
 1. {option from rules Next Steps}
 2. {option from rules Next Steps}
-3. Generate review prompts
-4. Other
+3. Other
 ```
 
-If Phase 4 wrote or updated any files, MUST append a final chat-only `Review Prompt` section after the next-step options. If output was chat-only and no files changed, skip this section.
-This applies to any successful file-writing generate flow, including artifacts, code, workflow/instruction updates, and multi-file edits.
-If files were written and the response omits the `Review Prompt` section or either required review prompt, the generate output is incomplete.
+If Phase 4 wrote or updated any files, the next-step menu is informational only; whether the workflow is ending on the validated success path or any RELAXED explicitly unvalidated exit, it MUST generate the review prompts automatically in the same response after listing the options. MUST NOT ask whether review prompts should be generated and MUST NOT wait for a later user turn to generate them.
 
- `Review Prompt` rules — both prompts MUST be **self-contained final prompts** usable in a fresh chat without any prior context:
- - explicitly begin with the phrase `Invoke skill cypilot`
- - state that `/cypilot-generate` is complete and the next chat is for reviewing the generated changes
+If Phase 4 wrote or updated any files, MUST append a final chat-only `Review Prompts` section immediately after the next-step options in the same response. If output was chat-only and no files changed, skip this section.
+
+This applies to any file-writing generate flow, including validated outputs, RELAXED explicitly unvalidated outputs, artifacts, code, workflow/instruction updates, and multi-file edits.
+
+If files were written and the response omits the `Review Prompts` section or either required review prompt, or ends before those blocks are emitted, the generate output is incomplete.
+
+A summary alone is not completion. The `Validation Results` body alone is not completion. The next-step menu alone is not completion. For any file-writing generate flow, the response is invalid unless it ends with `Review Prompts`, then `Plan Review Prompt`, then `Direct Review Prompt`.
+
+Before ending a file-writing response, perform this final self-check: were files written; if yes, was the `Review Prompts` section emitted; if yes, were both `Plan Review Prompt` and `Direct Review Prompt` emitted in that order; only then may the response end.
+
+`Review Prompts` rules — both prompts MUST be **self-contained final prompts** usable in a fresh chat without any prior context:
+
+- explicitly begin with the phrase `Invoke skill cypilot`
+- state that `/cypilot-generate` is complete and the next chat is for reviewing the generated changes
 - embed inline: changed file paths, what was changed per file (brief summary), kind/target, and the completed `Validation Results` body with actual values
- - do NOT reference "previous chat", "findings above", or any content outside the prompt itself
- - the prompt alone must give the next agent everything needed to start work immediately
- - generate **two separate prompts**:
+- do NOT reference "previous chat", "findings above", or any content outside the prompt itself
+- the prompt alone must give the next agent everything needed to start work immediately
+- generate **two separate prompts**:
  1. `Plan Review Prompt` — route to `/cypilot-plan` when the review scope is broad, multi-file, or needs to be phased or strict coverage
  2. `Direct Review Prompt` — route to `/cypilot-analyze` when the review scope is bounded and can be performed immediately
- - include both prompts in the same final response whenever files were written
- - MUST NOT ask the next agent to regenerate or re-implement the changes
+- include both prompts in the same final response whenever files were written
+- MUST NOT ask the next agent to regenerate or re-implement the changes
 
 Template:
 
@@ -336,7 +352,7 @@ Changed files:
 - `{path}` — {brief description of what was created/changed}
 - `{additional path}` — {brief description}
 
-{paste the completed Validation Results body from the canonical template above verbatim, preserving field names, order, and values}
+{paste the completed Validation Results body from the canonical template above verbatim, preserving field names, order, values, and any conditional `SKIPPED`-only lines exactly as emitted}
 
 Use `/cypilot-plan` to create a phased review plan for these changes.
 Focus on review coverage, risk hotspots, and the minimal set of review phases needed for high confidence.
@@ -359,7 +375,7 @@ Changed files:
 - `{path}` — {brief description of what was created/changed}
 - `{additional path}` — {brief description}
 
-{paste the completed Validation Results body from the canonical template above verbatim, preserving field names, order, and values}
+{paste the completed Validation Results body from the canonical template above verbatim, preserving field names, order, values, and any conditional `SKIPPED`-only lines exactly as emitted}
 
 Use `/cypilot-analyze` to review these changes now.
 Report findings with severity, evidence, risks, regressions, and recommended fixes.
@@ -388,8 +404,10 @@ Validation failure loop (3+ times):
 ⚠️ Deterministic validation is still failing after repeated fixes. Options:
 1. Review checklist requirements manually and fix the reported validator errors
 2. Simplify artifact scope or revert the last change set, then re-run validation
-3. RELAXED mode only: stop the success path and return the result as unvalidated (`Deterministic gate: FAIL` or `SKIPPED`); do not present it as PASS
+3. RELAXED mode only: stop the validated success path and return the result as explicitly unvalidated with `Deterministic gate: FAIL`; do not present it as PASS, and if files were written still emit both review prompts before ending the response
 ```
+
+A legitimate RELAXED `Deterministic gate: SKIPPED` exit for file-writing output is separate from this failure loop: use it only when `Validator availability proof` shows that no canonical validator route is target-applicable for the current written output, and record the explicit `Validator availability proof`, `Skip reason`, `Validator-backed evidence note`, and mandatory review-prompt pair without inventing a validation-failure narrative.
 
 ## State Summary
 
@@ -414,7 +432,10 @@ Validation failure loop (3+ times):
 - [ ] Artifacts registry updated (if file output + rules)
 - [ ] Validation executed
 - [ ] Exact deterministic validator command(s), per-command validator results, and overall deterministic gate recorded
+- [ ] `Validator availability proof` recorded when deterministic gate is `SKIPPED`
 - [ ] `Semantic review basis` recorded
 - [ ] `Skip reason` and `Validator-backed evidence note` recorded when deterministic gate is `SKIPPED`
-- [ ] Review prompt generated when files were written
-- [ ] Both `Plan Review Prompt` and `Direct Review Prompt` generated in the same response when files were written
+- [ ] For file-writing output, the final-response gate self-check was completed before ending the response
+- [ ] `Review Prompts` section generated when files were written
+- [ ] `Plan Review Prompt` appears before `Direct Review Prompt` whenever files were written
+- [ ] Both `Plan Review Prompt` and `Direct Review Prompt` generated in the same response whenever files were written, including RELAXED explicitly unvalidated exits

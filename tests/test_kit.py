@@ -164,6 +164,9 @@ class TestCmdKitUpdate(unittest.TestCase):
                 with redirect_stdout(buf):
                     rc = cmd_kit_update(["--path", str(kit_src)])
                 self.assertEqual(rc, 1)
+                out = json.loads(buf.getvalue())
+                self.assertEqual(out["status"], "ERROR")
+                self.assertIn("No project root found", out["message"])
             finally:
                 os.chdir(cwd)
 
@@ -262,6 +265,168 @@ class TestCmdKitUpdate(unittest.TestCase):
                 out = json.loads(buf.getvalue())
                 # With identical files, force still reports "current" (no actual diff)
                 self.assertIn(out["results"][0]["action"], ("current", "updated"))
+            finally:
+                os.chdir(cwd)
+
+    def test_update_manifest_invalid_binding_fails(self):
+        from cypilot.commands.kit import cmd_kit_update
+        from cypilot.utils import toml_utils
+
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            adapter = _bootstrap_project(root)
+            kit_src = _make_manifest_kit_source(Path(td), "manifestfail")
+            installed_dir = adapter / "config" / "kits" / "manifestfail"
+            installed_dir.mkdir(parents=True)
+            installed_skill = installed_dir / "SKILL.md"
+            installed_skill.write_text("# Existing Skill\n", encoding="utf-8")
+            invalid_binding = "/opt/cypilot/constraints.toml" if os.name == "nt" else "C:/external-kits/sdlc/constraints.toml"
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "manifestfail": {
+                        "format": "Cypilot",
+                        "path": "config/kits/manifestfail",
+                        "version": "0",
+                        "resources": {
+                            "skill": {"path": "config/kits/manifestfail/SKILL.md"},
+                            "agents": {"path": "config/kits/manifestfail/AGENTS.md"},
+                            "constraints": {"path": invalid_binding},
+                        },
+                    },
+                },
+            }, adapter / "config" / "core.toml")
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = cmd_kit_update(["--path", str(kit_src), "--no-interactive", "-y"])
+                self.assertEqual(rc, 2)
+                out = json.loads(buf.getvalue())
+                self.assertEqual(out["status"], "FAIL")
+                self.assertEqual(out["results"][0]["action"], "failed")
+                self.assertTrue(any("not accessible on this OS" in err for err in out.get("errors", [])))
+                self.assertEqual(installed_skill.read_text(encoding="utf-8"), "# Existing Skill\n")
+            finally:
+                os.chdir(cwd)
+
+    def test_update_mixed_failed_run_returns_fail_and_skips_regen(self):
+        import cypilot.commands.kit as kit_module
+        from cypilot.commands.kit import cmd_kit_update
+        from cypilot.utils import toml_utils
+
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            adapter = _bootstrap_project(root)
+            kit_src_a = _make_kit_source(Path(td), "akit")
+            kit_src_b = _make_kit_source(Path(td), "bkit")
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "akit": {"format": "Cypilot", "path": "config/kits/akit", "version": "1", "source": "github:owner/akit"},
+                    "bkit": {"format": "Cypilot", "path": "config/kits/bkit", "version": "1", "source": "github:owner/bkit"},
+                },
+            }, adapter / "config" / "core.toml")
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                buf = io.StringIO()
+                with patch.object(
+                    kit_module,
+                    "_resolve_github_update_targets",
+                    return_value=([
+                        ("akit", kit_src_a, "github:owner/akit", None),
+                        ("bkit", kit_src_b, "github:owner/bkit", None),
+                    ], []),
+                ):
+                    with patch.object(kit_module, "show_kit_whatsnew", return_value=True):
+                        with patch.object(
+                            kit_module,
+                            "update_kit",
+                            side_effect=[
+                                {
+                                    "kit": "akit",
+                                    "version": {"status": "failed"},
+                                    "gen": {"files_written": 0},
+                                    "errors": ["binding resolution failed"],
+                                },
+                                {
+                                    "kit": "bkit",
+                                    "version": {"status": "updated"},
+                                    "gen": {"files_written": 1, "accepted_files": ["SKILL.md"], "unchanged": 0},
+                                },
+                            ],
+                        ):
+                            with patch.object(kit_module, "regenerate_gen_aggregates") as regen_mock:
+                                with redirect_stdout(buf):
+                                    rc = cmd_kit_update([])
+                self.assertEqual(rc, 2)
+                out = json.loads(buf.getvalue())
+                self.assertEqual(out["status"], "FAIL")
+                self.assertEqual([r["action"] for r in out["results"]], ["failed", "updated"])
+                self.assertTrue(any("binding resolution failed" in err for err in out.get("errors", [])))
+                regen_mock.assert_not_called()
+            finally:
+                os.chdir(cwd)
+
+    def test_update_mixed_exception_run_returns_fail_and_skips_regen(self):
+        import cypilot.commands.kit as kit_module
+        from cypilot.commands.kit import cmd_kit_update
+        from cypilot.utils import toml_utils
+
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            adapter = _bootstrap_project(root)
+            kit_src_a = _make_kit_source(Path(td), "akit")
+            kit_src_b = _make_kit_source(Path(td), "bkit")
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "akit": {"format": "Cypilot", "path": "config/kits/akit", "version": "1", "source": "github:owner/akit"},
+                    "bkit": {"format": "Cypilot", "path": "config/kits/bkit", "version": "1", "source": "github:owner/bkit"},
+                },
+            }, adapter / "config" / "core.toml")
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(str(root))
+                buf = io.StringIO()
+                with patch.object(
+                    kit_module,
+                    "_resolve_github_update_targets",
+                    return_value=([
+                        ("akit", kit_src_a, "github:owner/akit", None),
+                        ("bkit", kit_src_b, "github:owner/bkit", None),
+                    ], []),
+                ):
+                    with patch.object(kit_module, "show_kit_whatsnew", return_value=True):
+                        with patch.object(
+                            kit_module,
+                            "update_kit",
+                            side_effect=[
+                                RuntimeError("unexpected update error"),
+                                {
+                                    "kit": "bkit",
+                                    "version": {"status": "updated"},
+                                    "gen": {"files_written": 1, "accepted_files": ["SKILL.md"], "unchanged": 0},
+                                },
+                            ],
+                        ):
+                            with patch.object(kit_module, "regenerate_gen_aggregates") as regen_mock:
+                                with redirect_stdout(buf):
+                                    rc = cmd_kit_update([])
+                self.assertEqual(rc, 2)
+                out = json.loads(buf.getvalue())
+                self.assertEqual(out["status"], "FAIL")
+                self.assertEqual([r["action"] for r in out["results"]], ["failed", "updated"])
+                self.assertTrue(any("unexpected update error" in err for err in out.get("errors", [])))
+                regen_mock.assert_not_called()
             finally:
                 os.chdir(cwd)
 
@@ -375,8 +540,6 @@ class TestSerializeManifestBindingPath(unittest.TestCase):
             )
 
         self.assertEqual(binding, "D:/external-kits/sdlc/SKILL.md")
-
-
 
 
 class TestCmdKitInstall(unittest.TestCase):
@@ -780,7 +943,8 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             kits_dir = adapter / "kits" / "sdlc"
             kits_dir.mkdir(parents=True)
             (kits_dir / "conf.toml").write_text("version = 1\n", encoding="utf-8")
-            (kits_dir / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+            (kits_dir / "artifacts").mkdir()
+            (kits_dir / "artifacts" / "PRD.md").write_text("# PRD\n", encoding="utf-8")
             # Legacy artifacts to skip
             bp_dir = kits_dir / "blueprints"
             bp_dir.mkdir()
@@ -789,7 +953,7 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             self.assertEqual(result["sdlc"], "migrated")
             config_kit = adapter / "config" / "kits" / "sdlc"
             self.assertTrue((config_kit / "conf.toml").is_file())
-            self.assertTrue((config_kit / "SKILL.md").is_file())
+            self.assertTrue((config_kit / "artifacts" / "PRD.md").is_file())
             # Blueprints should NOT be copied
             self.assertFalse((config_kit / "blueprints").exists())
             # Old kits/ dir should be removed
@@ -801,8 +965,10 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             adapter = Path(td) / "cypilot"
             gen_kit = adapter / ".gen" / "kits" / "sdlc"
             gen_kit.mkdir(parents=True)
-            (gen_kit / "SKILL.md").write_text("# Gen Skill\n", encoding="utf-8")
+            (gen_kit / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+
             result = _detect_and_migrate_layout(adapter)
+
             self.assertIn("sdlc", result)
             config_kit = adapter / "config" / "kits" / "sdlc"
             self.assertTrue((config_kit / "SKILL.md").is_file())
@@ -816,7 +982,7 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             adapter = Path(td) / "cypilot"
             kits_dir = adapter / "kits" / "sdlc"
             kits_dir.mkdir(parents=True)
-            (kits_dir / "conf.toml").write_text("version = 1\n", encoding="utf-8")
+            (kits_dir / "conf.toml").write_text("v=1\n", encoding="utf-8")
             config_dir = adapter / "config"
             config_dir.mkdir(parents=True)
             toml_utils.dump({
@@ -1442,7 +1608,7 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             # blueprints should NOT be copied
             self.assertFalse((config_kit / "blueprints").exists())
             # Old kits/ dir should be removed
-            self.assertFalse((cypilot / "kits").exists())
+            self.assertFalse((cypilot / "kits").is_dir())
 
     def test_migrate_gen_kits(self):
         """.gen/kits/{slug}/ content migrates to config/kits/{slug}/."""
@@ -1459,7 +1625,7 @@ class TestDetectAndMigrateLayout(unittest.TestCase):
             config_kit = cypilot / "config" / "kits" / "sdlc"
             self.assertTrue((config_kit / "SKILL.md").is_file())
             # .gen/kits/ should be removed
-            self.assertFalse((cypilot / ".gen" / "kits").exists())
+            self.assertFalse((cypilot / ".gen" / "kits").is_dir())
 
     def test_dry_run(self):
         from cypilot.commands.kit import _detect_and_migrate_layout
@@ -2247,7 +2413,7 @@ class TestCmdKitUpdateCli(unittest.TestCase):
                 os.chdir(cwd)
 
     def test_update_all_fail_returns_nonzero(self):
-        """cmd_kit_update returns 1 when all kit updates raise errors."""
+        """cmd_kit_update returns 2 when all kit updates raise errors."""
         from cypilot.commands.kit import cmd_kit_update
         with TemporaryDirectory() as td:
             root = Path(td) / "proj"
@@ -2263,12 +2429,12 @@ class TestCmdKitUpdateCli(unittest.TestCase):
                     buf = io.StringIO()
                     with redirect_stdout(buf):
                         rc = cmd_kit_update(["--path", str(kit_src)])
-                self.assertEqual(rc, 1)
+                self.assertEqual(rc, 2)
                 out = json.loads(buf.getvalue())
-                self.assertIn(out["status"], ("WARN", "FAIL"))
+                self.assertEqual(out["status"], "FAIL")
                 self.assertTrue(
-                    all(r.get("action") == "ERROR" for r in out["results"]),
-                    f"Expected all actions to be ERROR, got {out['results']}",
+                    all(r.get("action") == "failed" for r in out["results"]),
+                    f"Expected all actions to be failed, got {out['results']}",
                 )
             finally:
                 os.chdir(cwd)
@@ -2304,6 +2470,39 @@ class TestUpdateKitVersionPaths(unittest.TestCase):
             r = update_kit("tk", src, cyp, force=False)
             self.assertEqual(r["version"]["status"], "current")
             self.assertIn("skill_nav", r)
+
+    def test_manifest_invalid_binding_returns_failed_without_writing(self):
+        from cypilot.commands.kit import update_kit
+        from cypilot.utils import toml_utils
+
+        with TemporaryDirectory() as td:
+            src = _make_manifest_kit_source(Path(td) / "src", "tk")
+            cyp = Path(td) / "cyp"
+            config_kit = cyp / "config" / "kits" / "tk"
+            config_kit.mkdir(parents=True)
+            skill_path = config_kit / "SKILL.md"
+            skill_path.write_text("# Existing Skill\n", encoding="utf-8")
+            invalid_binding = "/opt/cypilot/constraints.toml" if os.name == "nt" else "C:/external-kits/sdlc/constraints.toml"
+            toml_utils.dump({
+                "version": "1.0",
+                "kits": {
+                    "tk": {
+                        "version": "0",
+                        "path": "config/kits/tk",
+                        "resources": {
+                            "skill": {"path": "config/kits/tk/SKILL.md"},
+                            "agents": {"path": "config/kits/tk/AGENTS.md"},
+                            "constraints": {"path": invalid_binding},
+                        },
+                    },
+                },
+            }, cyp / "config" / "core.toml")
+
+            r = update_kit("tk", src, cyp, auto_approve=True)
+
+            self.assertEqual(r["version"]["status"], "failed")
+            self.assertTrue(any("not accessible on this OS" in err for err in r.get("errors", [])))
+            self.assertEqual(skill_path.read_text(encoding="utf-8"), "# Existing Skill\n")
 
 
 # ---------------------------------------------------------------------------
@@ -2473,17 +2672,16 @@ class TestPartialGithubSourceFailures(unittest.TestCase):
                     buf = io.StringIO()
                     with redirect_stdout(buf):
                         rc = cmd_kit_update(["--force", "-y"])
-                self.assertEqual(rc, 0)
+                self.assertEqual(rc, 2)
                 out = json.loads(buf.getvalue())
-                # Top-level status must not be plain PASS
-                self.assertEqual(out["status"], "WARN")
+                self.assertEqual(out["status"], "FAIL")
                 self.assertIn("errors", out)
                 # Failed kit must appear in results
                 slugs = {r["kit"] for r in out["results"]}
                 self.assertIn("badkit", slugs)
                 self.assertIn("goodkit", slugs)
                 bad_r = next(r for r in out["results"] if r["kit"] == "badkit")
-                self.assertEqual(bad_r["action"], "ERROR")
+                self.assertEqual(bad_r["action"], "failed")
                 self.assertIn("message", bad_r)
             finally:
                 os.chdir(cwd)
@@ -2520,7 +2718,7 @@ class TestPartialGithubSourceFailures(unittest.TestCase):
                 self.assertIn("results", out)
                 self.assertEqual(len(out["results"]), 2)
                 for r in out["results"]:
-                    self.assertEqual(r["action"], "ERROR")
+                    self.assertEqual(r["action"], "failed")
             finally:
                 os.chdir(cwd)
 

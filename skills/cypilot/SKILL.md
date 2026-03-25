@@ -166,6 +166,11 @@ No workflow routing skips workflow selection only. It does not waive confirmatio
 
 Cypilot has exactly three core workflows plus specialized sub-workflows. Routing priority is `plan` > `generate`/`analyze`.
 
+Completion invariants for workflow outputs:
+- A `/cypilot-generate` run that wrote or updated any files is not complete until the final response includes both `Plan Review Prompt` and `Direct Review Prompt` blocks. This applies on both the validated success path and the RELAXED explicitly unvalidated recovery path.
+- A `/cypilot-analyze` run with any actionable issue is not complete until the final response includes both `Fix Prompt` and `Plan Prompt` blocks.
+- MUST NOT end a workflow response immediately after the summary, analysis report, or next-step options when one of the required prompt pairs is still missing.
+
 | Intent | Match | Action |
 |---|---|---|
 | Plan | `plan`, `create a plan`, `execution plan`, `break down`, `decompose`, or `plan to ...` | Open and follow `{cypilot_path}/.core/workflows/plan.md` first |

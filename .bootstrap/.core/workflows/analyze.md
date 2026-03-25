@@ -26,7 +26,7 @@ purpose: Universal workflow for analysing any Cypilot artifact or code
     - [Semantic Review Content (STRICT mode)](#semantic-review-content-strict-mode)
   - [Phase 4: Output](#phase-4-output)
     - [Standard Analysis Output (non-prompt review)](#standard-analysis-output-non-prompt-review)
-    - [Prompt Review Output (PROMPT_REVIEW)](#prompt-review-output-prompt_review)
+    - [Prompt Review Output (PROMPT\_REVIEW)](#prompt-review-output-prompt_review)
     - [Fix Prompt](#fix-prompt)
     - [Plan Prompt](#plan-prompt)
     - [Semantic-Only Output (`/cypilot-analyze semantic`)](#semantic-only-output-cypilot-analyze-semantic)
@@ -44,9 +44,9 @@ ALWAYS open and follow `{cypilot_path}/.core/skills/cypilot/SKILL.md` FIRST WHEN
 
 ALWAYS open and follow `{cypilot_path}/.core/requirements/execution-protocol.md` FIRST
 
-ALWAYS open and follow `{cypilot_path}/.core/requirements/code-checklist.md` WHEN user requests analysis of code, codebase changes, or implementation behavior (Code mode)
+ALWAYS open and follow `{cypilot_path}/.core/requirements/code-checklist.md` WHEN user requests analysis of code, codebase changes, or implementation behavior (Code mode); WHEN this rule triggers, ALWAYS also open and follow `{cypilot_path}/.core/requirements/bug-finding.md` as the companion defect-search methodology
 
-ALWAYS open and follow `{cypilot_path}/.core/requirements/bug-finding.md` WHEN user requests bug hunting, logic bug review, edge-case search, regression risk analysis, root-cause search in code, or asks to find "all bugs/problems" in code
+ALWAYS open and follow `{cypilot_path}/.core/requirements/bug-finding.md` WHEN user requests bug hunting, logic bug review, edge-case search, regression risk analysis, root-cause search in code, or asks to find "all bugs/problems" in code; this direct trigger remains mandatory even when `code-checklist.md` was not the reason the review entered Code mode
 
 ALWAYS open and follow `{cypilot_path}/.core/requirements/consistency-checklist.md` WHEN user requests analysis of documentation/artifact consistency, contradiction detection, or cross-document alignment (Consistency mode)
 
@@ -58,7 +58,9 @@ ALWAYS open and follow `{cypilot_path}/.core/requirements/prompt-engineering.md`
 - Any document containing instructions for AI agents
 - User explicitly mentions `prompt engineering review`, `prompt bug review`, `prompt bugs`, or `instruction quality`
 
-ALWAYS open and follow `{cypilot_path}/.core/requirements/prompt-bug-finding.md` WHEN user requests bug hunting, hidden failure modes, unsafe behavior, regressions, instruction conflicts, routing defects, or root-cause search in prompts, agent instructions, workflows, skills, or other AI instruction documents
+WHEN this rule triggers, ALWAYS also open and follow `{cypilot_path}/.core/requirements/prompt-bug-finding.md` as the companion behavioral defect-search methodology
+
+ALWAYS open and follow `{cypilot_path}/.core/requirements/prompt-bug-finding.md` WHEN user requests bug hunting, hidden failure modes, unsafe behavior, regressions, instruction conflicts, routing defects, or root-cause search in prompts, agent instructions, workflows, skills, or other AI instruction documents; this direct trigger remains mandatory even when `prompt-engineering.md` was not the reason prompt review was selected
 
 When `prompt-engineering.md` is loaded for instruction analysis, treat compact-prompts optimization as a **HIGH-priority requirement**: explicitly look for safe ways to reduce loaded context while preserving clarity, determinism, constraints, and recovery behavior.
 
@@ -79,11 +81,11 @@ When `prompt-engineering.md` is loaded for instruction analysis, treat compact-p
 Before output, self-check: PASS without semantic review? fresh Read this turn? N/A claims quoted? per-category evidence present? actual `cpt validate` output shown? If any answer is no → STOP and restart with compliance.
 
 ## Overview
-Modes: Full (default) = deterministic gate → semantic review; Semantic-only = skip deterministic gate; Artifact = template + checklist; Code = checklist + design requirements; Prompt review = prompt-engineering review for instruction documents, optionally paired with prompt-bug-finding for defect-oriented requests.
+Modes: Full (default) = deterministic gate → semantic review; Semantic-only = skip deterministic gate; Artifact = template + checklist; Code = code-checklist + bug-finding + design requirements; Prompt review = prompt-engineering + prompt-bug-finding review for instruction documents.
 Commands: `/cypilot-analyze`, `/cypilot-analyze semantic`, `/cypilot-analyze --artifact <path>`, `/cypilot-analyze semantic --artifact <path>`.
 Prompt review triggers include "analyze this system prompt", "review agent instructions", "check this workflow/skill", and "prompt engineering review". Select prompt review from the request intent and target context; do **not** assume a dedicated prompt-specific public route unless the current host explicitly exposes one. After `execution-protocol.md`, you have `TARGET_TYPE`, `RULES`, `KIND`, `PATH`, and resolved dependencies.
 If analysis finds actionable issues, the workflow MUST end by generating two chat-only remediation prompts: a bounded `Fix Prompt` that invokes skill `cypilot` and routes to `/cypilot-generate`, and a broader `Plan Prompt` that invokes skill `cypilot` and routes to `/cypilot-plan`. Both prompts MUST be self-contained final prompts usable in a fresh chat — all findings, paths, and context embedded inline.
-For code-review style requests such as `review my changes`, `review this diff`, `inspect this patch`, or similar review/audit requests, every reported defect, regression risk, or fix recommendation that requires code or workflow changes counts as an actionable issue and therefore MUST trigger both remediation prompts in the same response.
+For code-review style requests such as `review my changes`, `review this diff`, `inspect this patch`, or similar review/audit requests, every reported defect, regression risk, or fix recommendation that requires artifact, code, or workflow/instruction changes counts as an actionable issue and therefore MUST trigger both remediation prompts in the same response.
 
 ## Context Budget & Overflow Prevention (CRITICAL)
 - Budget first: estimate size before loading large docs (for example with `wc -l`) and state the budget for this turn.
@@ -94,7 +96,7 @@ For code-review style requests such as `review my changes`, `review this diff`, 
 
 ## Mode Detection
 - `/cypilot-analyze semantic` or `cypilot analyze semantic` → `SEMANTIC_ONLY=true`; skip Phase 2 and go to Phase 3; semantic review remains mandatory.
-- Prompt/instruction review context → `PROMPT_REVIEW=true`; open `prompt-engineering.md`, and when the request is defect-oriented also open `prompt-bug-finding.md`; run the 9-layer prompt-engineering review, explicitly search for safe context-reduction opportunities per compact-prompts methodology, run prompt-bug-finding when loaded, skip standard Cypilot artifact/code checklist analysis, and use the prompt-review output contract from Phase 4. Do **not** pre-mark traceability, registry, or similar checks as `N/A`; mark `N/A` only when the reviewed document explicitly makes a check inapplicable, otherwise report `FAIL` or `PARTIAL` per the loaded prompt methodologies.
+- Prompt/instruction review context → `PROMPT_REVIEW=true`; open `prompt-engineering.md` and `prompt-bug-finding.md`; run the 9-layer prompt-engineering review, explicitly search for safe context-reduction opportunities per compact-prompts methodology, run prompt-bug-finding as the behavioral defect-search companion, skip standard Cypilot artifact/code checklist analysis, and use the prompt-review output contract from Phase 4. Do **not** pre-mark traceability, registry, or similar checks as `N/A`; mark `N/A` only when the reviewed document explicitly makes a check inapplicable, otherwise report `FAIL` or `PARTIAL` per the loaded prompt methodologies.
 - Otherwise → `SEMANTIC_ONLY=false`, `PROMPT_REVIEW=false`; run full analysis.
 
 ## Phase 0: Ensure Dependencies
@@ -102,7 +104,7 @@ After `execution-protocol.md`, you have `KITS_PATH`, `TEMPLATE`, `CHECKLIST`, `E
 
 - If `rules.md` loaded: dependencies and validation checks were already resolved; proceed silently.
 - If `rules.md` not loaded: ask the user to provide/specify missing `checklist`, `template`, or `example`.
-- Code mode additional: load `{cypilot_path}/.core/requirements/code-checklist.md` and ask the user to specify the design artifact if missing.
+- Code mode additional: load `{cypilot_path}/.core/requirements/code-checklist.md` and `{cypilot_path}/.core/requirements/bug-finding.md`, then ask the user to specify the design artifact if missing.
 
 **MUST NOT proceed** to Phase 1 until all dependencies are available.
 
@@ -242,9 +244,13 @@ Checkpoint rule for artifacts `>500` lines or multi-turn analysis: after each ch
 
 Print to chat only; create no files.
 
-If the result contains any actionable issue (`FAIL`, `PARTIAL`, blocking validator errors, or any recommendation that requires code/artifact changes), the agent MUST append both a final `Fix Prompt` section and a final `Plan Prompt` section after the analysis output.
+If the result contains any actionable issue (`FAIL`, `PARTIAL`, blocking validator errors, or any recommendation that requires artifact, code, or workflow/instruction changes), the agent MUST append both a final `Fix Prompt` section and a final `Plan Prompt` section after the analysis output.
 This requirement applies equally to artifact analysis, code analysis, PR-style review, and plain-language review requests such as `review my changes`.
-If the response reports even one fixable finding, omission of either remediation prompt makes the analysis output incomplete.
+If the response reports even one fixable finding, omission of either remediation prompt, or ending the response before both prompt blocks are emitted, makes the analysis output incomplete.
+
+An analysis summary alone is not completion. The validation report alone is not completion. The next-step menu alone is not completion. When actionable issues exist, the response is invalid unless it ends with `Fix Prompt` followed by `Plan Prompt`.
+
+Before ending a response with actionable issues, perform this final self-check: were actionable issues reported; if yes, was `Fix Prompt` emitted; if yes, was `Plan Prompt` emitted after it; only then may the response end.
 
 Both remediation prompts MUST be **self-contained final prompts** usable in a fresh chat without any prior context:
 - explicitly contain the sentence `Invoke skill cypilot`
@@ -280,7 +286,8 @@ Prompt-specific routing:
 - Warnings: {N}
 - Notes: {why skipped or blocking validator summary}
 
-### 3. Semantic Review (MANDATORY)
+### 3. Semantic Review
+- This section is mandatory in completed analysis output even when category outcomes include `PASS`, `FAIL`, `PARTIAL`, or `N/A`.
 - Checklist Progress:
 | Category | Status | Evidence |
 |----------|--------|----------|
@@ -289,6 +296,7 @@ Prompt-specific routing:
 - Categories Summary: Total {N}; PASS {N}; FAIL {N}; PARTIAL {N}; N/A {N}; Unsupported-N/A violations {N}
 
 ### 4. Agent Self-Test
+- Reuse the canonical self-test questions from `## Agent Self-Test (STRICT mode — AFTER completing work)` below; if RELAXED mode uses a justified subset, state that explicitly.
 | Question | Answer | Evidence |
 |----------|--------|----------|
 | {question} | YES/NO | {evidence} |
@@ -304,7 +312,7 @@ Prompt-specific routing:
 - **Low**: {issue with location}
 ```
 
-In STRICT mode, use these exact six section titles from `agent-compliance.md`; do **not** substitute alternate headings such as `## Analysis` or `### Category Review`.
+Use these same six section titles in both STRICT and RELAXED standard analysis output. In STRICT mode the titles must match exactly; in RELAXED mode content may be lighter, but do **not** substitute alternate headings such as `## Analysis` or `### Category Review`.
 
 ### Prompt Review Output (PROMPT_REVIEW)
 `PROMPT_REVIEW=true` does **not** use the standard analysis template above. It MUST use the report format from `prompt-engineering.md` in this exact section order:
@@ -386,6 +394,8 @@ Issues require remediation. Use one of the generated prompts above as the defaul
 2. Start phased remediation with skill `cypilot` via the generated `Plan Prompt`
 3. Re-run analysis after fixes
 ```
+If actionable issues exist, the next-step menu is informational only; the workflow MUST still end in the same response with `Fix Prompt` followed by `Plan Prompt` as the final two sections. MUST NOT ask whether the prompts should be generated and MUST NOT defer them to a later user turn.
+
 ## State Summary
 
 | State | TARGET_TYPE | Uses Template | Uses Checklist | Uses Design |
@@ -451,7 +461,10 @@ RELAXED mode disclaimer:
 - [ ] Result correctly reported (PASS/FAIL/PARTIAL)
 - [ ] Prompt review output follows `prompt-engineering.md` section order and includes the `prompt-bug-finding.md` status block when that methodology is loaded
 - [ ] Recommendations provided (if PASS)
+- [ ] For outputs with actionable issues, the final-response gate self-check was completed before ending the response
 - [ ] Both remediation prompts generated when issues require fixes
+- [ ] `Fix Prompt` appears before `Plan Prompt` whenever actionable issues exist
+- [ ] Workflow response did not end before the required remediation prompt pair was emitted
 - [ ] For code review / `review my changes` requests, any reported fixable finding produced both remediation prompts in the same response
 - [ ] Output to chat only
 - [ ] Next steps suggested

@@ -1502,7 +1502,8 @@ class TestRunMigrateEdgeCases(unittest.TestCase):
                     with patch("cypilot.commands.migrate._cmd_generate_agents",
                                side_effect=Exception("agents broke")):
                         result = run_migrate(root, yes=True)
-            self.assertTrue(any("agents" in w.lower() for w in result.get("warnings", [])))
+            self.assertEqual(result["status"], "ERROR")
+            self.assertIn("Agent entry point regeneration failed", result.get("message", ""))
 
 
 # ===========================================================================
@@ -2227,14 +2228,8 @@ class TestRunMigrateAgentsSystemExit(unittest.TestCase):
                     with patch("cypilot.commands.migrate._cmd_generate_agents",
                                return_value=1):
                         result = run_migrate(root, yes=True)
-            # Migration should still complete (agent failure is non-fatal)
-            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
-            # Non-zero exit must surface as a warning
-            warnings = result.get("warnings", [])
-            self.assertTrue(
-                any("Agent entry point regeneration failed" in w for w in warnings),
-                f"Expected agent warning on SystemExit(1), got: {warnings}",
-            )
+            self.assertEqual(result["status"], "ERROR")
+            self.assertIn("Agent entry point regeneration failed", result.get("message", ""))
 
     def test_nonzero_return_code_surfaces_warning(self):
         with TemporaryDirectory() as d:
@@ -2247,14 +2242,8 @@ class TestRunMigrateAgentsSystemExit(unittest.TestCase):
                     with patch("cypilot.commands.migrate._cmd_generate_agents",
                                return_value=1):
                         result = run_migrate(root, yes=True)
-            # Migration should still complete (agent failure is non-fatal)
-            self.assertIn(result["status"], ("PASS", "VALIDATION_FAILED"))
-            # Non-zero return code must surface as a warning
-            warnings = result.get("warnings", [])
-            self.assertTrue(
-                any("Agent entry point regeneration failed" in w for w in warnings),
-                f"Expected agent warning on rc=1, got: {warnings}",
-            )
+            self.assertEqual(result["status"], "ERROR")
+            self.assertIn("Agent entry point regeneration failed", result.get("message", ""))
 
 
 # ===========================================================================

@@ -44,7 +44,33 @@ def run_validate_kits(
     # @cpt-begin:cpt-cypilot-algo-kit-validate:p1:inst-structural-check
     # ── Phase 1: Structural validation ────────────────────────────────
     kit_reports: List[Dict[str, object]] = []
+    kit_reports_by_id: Dict[str, Dict[str, object]] = {}
+    kit_errors_by_id: Dict[str, List[Dict[str, object]]] = {}
     all_errors: List[Dict[str, object]] = []
+    context_resource_errors: Dict[str, List[Dict[str, object]]] = {}
+
+    def _sync_kit_report(kit_id: str) -> None:
+        rep = kit_reports_by_id.get(kit_id)
+        if rep is None:
+            return
+        rep_errors = list(kit_errors_by_id.get(kit_id, []))
+        rep["status"] = "FAIL" if rep_errors else "PASS"
+        rep["error_count"] = len(rep_errors)
+        if verbose:
+            if rep_errors:
+                rep["errors"] = rep_errors
+            else:
+                rep.pop("errors", None)
+
+    for err in (getattr(ctx, "_errors", []) or []):
+        if not isinstance(err, dict) or err.get("type") != "resources":
+            continue
+        err_kit = str(err.get("kit", "") or "")
+        if kit_filter and err_kit != str(kit_filter):
+            continue
+        if err_kit:
+            context_resource_errors.setdefault(err_kit, []).append(err)
+        all_errors.append(err)
 
     for kit_id, loaded_kit in (ctx.kits or {}).items():
         if kit_filter and str(kit_id) != str(kit_filter):
@@ -58,26 +84,38 @@ def run_validate_kits(
             project_root,
             loaded_kit,
         )
+        kit_id_str = str(kit_id)
         constraints_root = constraints_path.parent if constraints_path is not None else kit_root
 
         _kc, kc_errs = load_constraints_toml(constraints_root)
+        kit_resource_errors = context_resource_errors.get(kit_id_str, [])
+        rep_errors: List[Dict[str, object]] = list(kit_resource_errors)
 
         rep: Dict[str, object] = {
-            "kit": str(kit_id),
+            "kit": kit_id_str,
             "path": str(kit_root),
-            "status": "PASS" if not kc_errs else "FAIL",
-            "error_count": len(kc_errs),
+            "status": "PASS",
+            "error_count": 0,
         }
         if kc_errs:
-            errs = [constraints_error("constraints", "Invalid constraints.toml", path=(constraints_path or (kit_root / "constraints.toml")), line=1, errors=list(kc_errs), kit=str(kit_id))]
-            if verbose:
-                rep["errors"] = errs
-            all_errors.extend(errs)
-        else:
-            if verbose and _kc is not None and getattr(_kc, "by_kind", None):
-                rep["kinds"] = sorted(_kc.by_kind.keys())
+            constraints_err = constraints_error(
+                "constraints",
+                "Invalid constraints.toml",
+                path=(constraints_path or (kit_root / "constraints.toml")),
+                line=1,
+                errors=list(kc_errs),
+                kit=kit_id_str,
+            )
+            rep_errors.insert(0, constraints_err)
+            all_errors.append(constraints_err)
+        if verbose and _kc is not None and getattr(_kc, "by_kind", None):
+            rep["kinds"] = sorted(_kc.by_kind.keys())
 
         kit_reports.append(rep)
+        kit_reports_by_id[kit_id_str] = rep
+        if rep_errors:
+            kit_errors_by_id[kit_id_str] = rep_errors
+        _sync_kit_report(kit_id_str)
     # @cpt-end:cpt-cypilot-algo-kit-validate:p1:inst-structural-check
 
     # @cpt-begin:cpt-cypilot-algo-kit-validate:p1:inst-resolve-resource-paths
@@ -85,6 +123,7 @@ def run_validate_kits(
     for kit_id, loaded_kit in (ctx.kits or {}).items():
         if kit_filter and str(kit_id) != str(kit_filter):
             continue
+        kit_id_str = str(kit_id)
         rb = getattr(loaded_kit, "resource_bindings", None)
         if not rb:
             continue
@@ -96,9 +135,11 @@ def run_validate_kits(
                     f"Resource '{res_id}' path not found: {res_path_str}",
                     path=str(abs_path),
                     line=1,
-                    kit=str(kit_id),
+                    kit=kit_id_str,
                 )
                 all_errors.append(err)
+                kit_errors_by_id.setdefault(kit_id_str, []).append(err)
+        _sync_kit_report(kit_id_str)
     # @cpt-end:cpt-cypilot-algo-kit-validate:p1:inst-resolve-resource-paths
 
     # @cpt-begin:cpt-cypilot-algo-kit-validate:p1:inst-template-check

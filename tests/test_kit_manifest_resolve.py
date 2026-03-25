@@ -583,6 +583,53 @@ class TestLoadedKitResourceBindings(unittest.TestCase):
             self.assertIn("sdlc", ctx.kits)
             self.assertIsNone(ctx.kits["sdlc"].resource_bindings)
 
+    def test_context_load_surfaces_invalid_binding_as_structured_error(self):
+        from cypilot.utils.context import CypilotContext
+
+        with TemporaryDirectory() as td:
+            td_path = Path(td)
+            root = td_path / "proj"
+            adapter = _bootstrap_project(root)
+            config = adapter / "config"
+            invalid_binding = "/opt/cypilot/constraints.toml" if os.name == "nt" else "C:/external-kits/sdlc/constraints.toml"
+
+            from cypilot.utils import toml_utils
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {
+                        "format": "Cypilot",
+                        "path": "config/kits/sdlc",
+                        "version": "2.0",
+                        "resources": {
+                            "constraints": {"path": invalid_binding},
+                        },
+                    },
+                },
+            }, config / "core.toml")
+
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {"format": "Cypilot", "path": "config/kits/sdlc"},
+                },
+                "systems": [{"name": "Test", "slug": "test", "kit": "sdlc"}],
+            }, config / "artifacts.toml")
+
+            kit_dir = config / "kits" / "sdlc"
+            kit_dir.mkdir(parents=True)
+            (kit_dir / "constraints.toml").write_text("[artifacts]\n", encoding="utf-8")
+
+            ctx = CypilotContext.load(root)
+
+            self.assertIsNotNone(ctx)
+            self.assertIsNone(ctx.kits["sdlc"].resource_bindings)
+            self.assertIsNotNone(ctx.kits["sdlc"].constraints)
+            self.assertTrue(any(err.get("type") == "resources" for err in ctx._errors))
+            self.assertTrue(any("not accessible on this OS" in str(err.get("message", "")) for err in ctx._errors))
+
 
 # ---------------------------------------------------------------------------
 # cpt info resources output

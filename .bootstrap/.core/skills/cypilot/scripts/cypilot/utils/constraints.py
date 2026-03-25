@@ -358,6 +358,22 @@ def _constraint_hint(c: "IdConstraint") -> str:
     return (" (" + "; ".join(parts) + ")") if parts else ""
 
 
+def _normalize_heading_identifier(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_heading_identifiers(values: object) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        normalized = _normalize_heading_identifier(raw)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
 def _validate_task_priority_constraints(
     hid: str,
     id_kind: str,
@@ -414,25 +430,22 @@ def _validate_id_heading_constraint(
     id_kind_description: Optional[str],
     id_kind_template: Optional[str],
 ) -> None:
-    allowed_headings = [
-        str(x).strip() for x in (getattr(c, "headings", None) or [])
-        if isinstance(x, str) and str(x).strip()
-    ]
+    allowed_headings = _normalize_heading_identifiers(getattr(c, "headings", None) or [])
     if not allowed_headings:
         return
-    allowed_norm = {str(x).strip().lower() for x in allowed_headings if str(x).strip()}
+    allowed_norm = set(allowed_headings)
     active_raw = headings_at[line] if 0 <= line < len(headings_at) else []
-    active_norm = [str(x).strip().lower() for x in active_raw if str(x).strip()]
+    active_norm = _normalize_heading_identifiers(active_raw)
     if any(a in allowed_norm for a in active_norm):
         return
     allowed_info = [
         {"id": h, "description": heading_desc_by_id.get(h)}
-        for h in sorted(allowed_norm)
+        for h in allowed_headings
     ]
 
     errors.append(error(
         "constraints",
-        f"`{hid}` (kind `{id_kind}`) in {kind} artifact is under {active_raw} but must be under one of {sorted(allowed_norm)}{_constraint_hint(c)}",
+        f"`{hid}` (kind `{id_kind}`) in {kind} artifact is under {active_raw} but must be under one of {allowed_headings}{_constraint_hint(c)}",
         code=EC.DEF_WRONG_HEADINGS,
         path=artifact_path,
         line=line,
@@ -440,7 +453,7 @@ def _validate_id_heading_constraint(
         id_kind=id_kind,
         id=hid,
         section="defined-id",
-        headings=sorted(allowed_norm),
+        headings=allowed_headings,
         headings_info=allowed_info,
         found_headings=active_raw,
         id_kind_name=id_kind_name,
@@ -686,7 +699,7 @@ def validate_artifact_file(
 
     heading_desc_by_id: Dict[str, str] = {}
     for hc in (getattr(constraints, "headings", None) or []):
-        hid = str(getattr(hc, "id", "") or "").strip()
+        hid = _normalize_heading_identifier(getattr(hc, "id", "") or "")
         if not hid:
             continue
         desc = str(getattr(hc, "description", "") or "").strip()
@@ -906,7 +919,7 @@ def cross_validate_artifacts(
 
         hdesc: Dict[str, str] = {}
         for hc in (getattr(c, "headings", None) or []):
-            hid = str(getattr(hc, "id", "") or "").strip()
+            hid = _normalize_heading_identifier(getattr(hc, "id", "") or "")
             if not hid:
                 continue
             d = str(getattr(hc, "description", "") or "").strip()
@@ -1034,7 +1047,7 @@ def cross_validate_artifacts(
         km = heading_desc_by_kind.get(str(kind).strip().upper(), {})
         out: List[Dict[str, object]] = []
         for hid in heading_ids:
-            hs = str(hid or "").strip()
+            hs = _normalize_heading_identifier(hid)
             if not hs:
                 continue
             out.append({"id": hs, "description": km.get(hs)})
@@ -1070,7 +1083,9 @@ def cross_validate_artifacts(
             checked = bool(h.get("checked", False))
             system = match_system_from_id(hid)
             id_kind = extract_kind_from_id(hid, system)
-            active_headings = headings_at[line] if 0 <= line < len(headings_at) else []
+            active_headings = _normalize_heading_identifiers(
+                headings_at[line] if 0 <= line < len(headings_at) else []
+            )
 
             row = {
                 "id": hid,
@@ -1250,7 +1265,7 @@ def cross_validate_artifacts(
             is_required = bool(getattr(ic, "required", True))
             defs_of_kind = [d for d in defs_in_file if str(d.get("id_kind") or "").lower() == k]
             if is_required and k and not defs_of_kind:
-                id_headings = [h for h in (getattr(ic, "headings", None) or []) if isinstance(h, str) and h.strip()]
+                id_headings = _normalize_heading_identifiers(getattr(ic, "headings", None) or [])
                 id_headings_info = headings_info_for_kind(ak, id_headings) if id_headings else None
                 errors.append(error(
                     "constraints",
@@ -1268,7 +1283,7 @@ def cross_validate_artifacts(
                 ))
                 continue
 
-            allowed_headings = set([h.strip() for h in (getattr(ic, "headings", None) or []) if isinstance(h, str) and h.strip()])
+            allowed_headings = set(_normalize_heading_identifiers(getattr(ic, "headings", None) or []))
             if allowed_headings and defs_of_kind:
                 allowed_sorted = sorted(allowed_headings)
                 allowed_info = headings_info_for_kind(ak, allowed_sorted)
@@ -1324,7 +1339,7 @@ def cross_validate_artifacts(
                         def_checked = bool(drow.get("checked", False))
                         task_rule = getattr(rule, "task", None)  # True=required, False=prohibited, None=allowed
                         prio_rule = getattr(rule, "priority", None)  # True=required, False=prohibited, None=allowed
-                        allowed_headings = set([h.strip() for h in (getattr(rule, "headings", None) or []) if isinstance(h, str) and h.strip()])
+                        allowed_headings = set(_normalize_heading_identifiers(getattr(rule, "headings", None) or []))
                         allowed_headings_sorted = sorted(allowed_headings)
                         allowed_headings_info = headings_info_for_kind(tk, allowed_headings_sorted)
 
@@ -1519,7 +1534,7 @@ def _parse_reference_rule(obj: object) -> Tuple[Optional[ReferenceRule], Optiona
     if headings_raw is not None:
         if not isinstance(headings_raw, list) or any(not isinstance(h, str) for h in headings_raw):
             return None, "Reference rule field 'headings' must be list[str]"
-        headings = [h for h in (x.strip() for x in headings_raw) if h]
+        headings = _normalize_heading_identifiers(headings_raw)
 
     return ReferenceRule(
         coverage=coverage,
@@ -1546,17 +1561,17 @@ def _parse_heading_constraint(obj: object, *, pointer: Optional[str] = None) -> 
     hid = obj.get("id")
     if hid is not None and not isinstance(hid, str):
         return None, "Heading constraint field 'id' must be string"
-    hid_s = hid.strip() if isinstance(hid, str) and hid.strip() else None
+    hid_s = _normalize_heading_identifier(hid) or None
 
     prev = obj.get("prev")
     if prev is not None and not isinstance(prev, str):
         return None, "Heading constraint field 'prev' must be string"
-    prev_s = prev.strip() if isinstance(prev, str) and prev.strip() else None
+    prev_s = _normalize_heading_identifier(prev) or None
 
     nxt = obj.get("next")
     if nxt is not None and not isinstance(nxt, str):
         return None, "Heading constraint field 'next' must be string"
-    next_s = nxt.strip() if isinstance(nxt, str) and nxt.strip() else None
+    next_s = _normalize_heading_identifier(nxt) or None
 
     level = obj.get("level")
     if not isinstance(level, int) or not (1 <= level <= 6):
@@ -1673,7 +1688,7 @@ def _parse_id_constraint(obj: object) -> Tuple[Optional[IdConstraint], Optional[
     if headings_raw is not None:
         if not isinstance(headings_raw, list) or any(not isinstance(h, str) for h in headings_raw):
             return None, "Constraint field 'headings' must be list[str]"
-        headings = [h for h in (x.strip() for x in headings_raw) if h]
+        headings = _normalize_heading_identifiers(headings_raw)
 
     # New schema: embedded references map.
     references, ref_err = _parse_references(obj.get("references"))

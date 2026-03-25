@@ -255,7 +255,6 @@ def validate_manifest(manifest: Manifest, kit_source: Path) -> List[str]:
 # Resource Resolution API
 # ---------------------------------------------------------------------------
 
-
 def _resolve_binding_path(cypilot_dir: Path, identifier: str, binding_path: str) -> Path:
     from ..commands.kit import _normalize_path_string, _resolve_registered_kit_dir
 
@@ -266,6 +265,7 @@ def _resolve_binding_path(cypilot_dir: Path, identifier: str, binding_path: str)
             f"Resource '{identifier}' binding path '{normalized_path}' is an absolute path that is not accessible on this OS"
         )
     return resolved_path
+
 
 # @cpt-begin:cpt-cypilot-algo-kit-manifest-resolve:p1:inst-resolve-read-bindings
 def resolve_resource_bindings(
@@ -280,6 +280,8 @@ def resolve_resource_bindings(
 
     Returns a dict mapping resource identifiers to absolute ``Path`` objects.
     Returns an empty dict if no resources section exists.
+    Raises ``ValueError`` if a configured binding path cannot be resolved on
+    the current OS.
 
     @cpt-algo:cpt-cypilot-algo-kit-manifest-resolve:p1
     """

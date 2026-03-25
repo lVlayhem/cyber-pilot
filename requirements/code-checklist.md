@@ -123,6 +123,12 @@ purpose: Generic (kit-agnostic) quality checklist for code changes and reviews
 - [ ] Side effects are isolated and mockable.
 - [ ] Behavior is deterministic.
 - [ ] Outcomes are observable.
+### QUAL-CODE-004: Complexity Control [HIGH]
+- [ ] Cyclomatic and cognitive complexity stay proportionate to the problem being solved.
+- [ ] Deep nesting and long branching chains are simplified or extracted.
+- [ ] Complex logic hotspots are isolated behind clear abstractions with focused tests.
+- [ ] Control flow remains understandable without tracing excessive hidden state or side effects.
+- [ ] Necessary complexity is justified by requirements rather than convenience or incidental design.
 ## Error Handling (ERR)
 ### ERR-CODE-001: Explicit Error Handling [CRITICAL]
 - [ ] Errors fail explicitly.

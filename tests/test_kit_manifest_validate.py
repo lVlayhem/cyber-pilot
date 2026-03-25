@@ -303,6 +303,192 @@ class TestValidateKitsResourcePaths(unittest.TestCase):
             finally:
                 set_context(None)
 
+    def test_missing_resource_path_marks_failed_kit_in_report(self):
+        from cypilot.utils.context import CypilotContext, set_context
+        from cypilot.commands.validate_kits import run_validate_kits
+
+        with TemporaryDirectory() as td:
+            td_path = Path(td)
+            root = td_path / "proj"
+            adapter = _bootstrap_project(root)
+            config = adapter / "config"
+
+            kit_dir = config / "kits" / "sdlc"
+            _write_minimal_constraints(kit_dir)
+
+            from cypilot.utils import toml_utils
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {
+                        "format": "Cypilot",
+                        "path": "config/kits/sdlc",
+                        "version": "2.0",
+                        "resources": {
+                            "adr_artifacts": {"path": "config/kits/sdlc/artifacts/ADR"},
+                            "constraints": {"path": "config/kits/sdlc/constraints.toml"},
+                        },
+                    },
+                },
+            }, config / "core.toml")
+
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {"format": "Cypilot", "path": "config/kits/sdlc"},
+                },
+                "systems": [{"name": "Test", "slug": "test", "kit": "sdlc"}],
+            }, config / "artifacts.toml")
+
+            ctx = CypilotContext.load(root)
+            self.assertIsNotNone(ctx)
+            set_context(ctx)
+
+            try:
+                rc, result = run_validate_kits(
+                    project_root=ctx.project_root,
+                    adapter_dir=ctx.adapter_dir,
+                )
+                self.assertEqual(rc, 2)
+                self.assertEqual(result["status"], "FAIL")
+                self.assertTrue(any(
+                    fk.get("kit") == "sdlc" and int(fk.get("error_count", 0)) >= 1
+                    for fk in result.get("failed_kits", [])
+                ))
+            finally:
+                set_context(None)
+
+    def test_invalid_binding_resolution_produces_resource_error(self):
+        from cypilot.utils.context import CypilotContext, set_context
+        from cypilot.commands.validate_kits import run_validate_kits
+
+        with TemporaryDirectory() as td:
+            td_path = Path(td)
+            root = td_path / "proj"
+            adapter = _bootstrap_project(root)
+            config = adapter / "config"
+
+            kit_dir = config / "kits" / "sdlc"
+            _write_minimal_constraints(kit_dir)
+
+            invalid_binding = "/opt/cypilot/constraints.toml" if sys.platform.startswith("win") else "C:/external-kits/sdlc/constraints.toml"
+
+            from cypilot.utils import toml_utils
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {
+                        "format": "Cypilot",
+                        "path": "config/kits/sdlc",
+                        "version": "2.0",
+                        "resources": {
+                            "constraints": {"path": invalid_binding},
+                        },
+                    },
+                },
+            }, config / "core.toml")
+
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {"format": "Cypilot", "path": "config/kits/sdlc"},
+                },
+                "systems": [{"name": "Test", "slug": "test", "kit": "sdlc"}],
+            }, config / "artifacts.toml")
+
+            ctx = CypilotContext.load(root)
+            self.assertIsNotNone(ctx)
+            self.assertIn("sdlc", ctx.kits)
+            self.assertIsNone(ctx.kits["sdlc"].resource_bindings)
+            self.assertTrue(any(err.get("type") == "resources" for err in getattr(ctx, "_errors", [])))
+            set_context(ctx)
+
+            try:
+                rc, result = run_validate_kits(
+                    project_root=ctx.project_root,
+                    adapter_dir=ctx.adapter_dir,
+                )
+                self.assertEqual(rc, 2)
+                self.assertEqual(result["status"], "FAIL")
+                self.assertGreater(result["error_count"], 0)
+                resource_errors = [
+                    e for e in result.get("errors", [])
+                    if e.get("type") == "resources"
+                ]
+                self.assertGreater(len(resource_errors), 0)
+                self.assertIn("not accessible on this OS", resource_errors[0]["message"])
+            finally:
+                set_context(None)
+
+    def test_inaccessible_absolute_kit_path_fails_and_reports_configured_path(self):
+        from cypilot.utils.context import CypilotContext, set_context
+        from cypilot.commands.validate_kits import run_validate_kits
+
+        with TemporaryDirectory() as td:
+            td_path = Path(td)
+            root = td_path / "proj"
+            adapter = _bootstrap_project(root)
+            config = adapter / "config"
+
+            inaccessible_kit_path = "C:/external-kits/sdlc" if not sys.platform.startswith("win") else "/external-kits/sdlc"
+
+            from cypilot.utils import toml_utils
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {
+                        "format": "Cypilot",
+                        "path": inaccessible_kit_path,
+                        "version": "2.0",
+                    },
+                },
+            }, config / "core.toml")
+
+            toml_utils.dump({
+                "version": "1.0",
+                "project_root": "..",
+                "kits": {
+                    "sdlc": {"format": "Cypilot", "path": "config/kits/sdlc"},
+                },
+                "systems": [{"name": "Test", "slug": "test", "kit": "sdlc"}],
+            }, config / "artifacts.toml")
+
+            ctx = CypilotContext.load(root)
+            self.assertIsNotNone(ctx)
+            self.assertIn("sdlc", ctx.kits)
+            self.assertIsNone(ctx.kits["sdlc"].kit_root)
+            self.assertTrue(any(err.get("type") == "resources" for err in getattr(ctx, "_errors", [])))
+            set_context(ctx)
+
+            try:
+                rc, result = run_validate_kits(
+                    project_root=ctx.project_root,
+                    adapter_dir=ctx.adapter_dir,
+                    verbose=True,
+                )
+                self.assertEqual(rc, 2)
+                self.assertEqual(result["status"], "FAIL")
+                self.assertEqual(result["kits"][0]["path"], inaccessible_kit_path)
+                self.assertNotEqual(result["kits"][0]["path"], str(ctx.adapter_dir.resolve()))
+                self.assertTrue(any(
+                    fk.get("kit") == "sdlc" and int(fk.get("error_count", 0)) >= 1
+                    for fk in result.get("failed_kits", [])
+                ) or result["kits"][0]["error_count"] >= 1)
+                resource_errors = [
+                    e for e in result.get("errors", [])
+                    if e.get("type") == "resources"
+                ]
+                self.assertGreater(len(resource_errors), 0)
+                self.assertIn("not accessible on this OS", resource_errors[0]["message"])
+                self.assertEqual(resource_errors[0]["path"], str((config / "core.toml").resolve()))
+            finally:
+                set_context(None)
+
     def test_all_resource_paths_exist_passes(self):
         """Registered kit with all resource bindings pointing to existing paths → PASS."""
         from cypilot.utils.context import CypilotContext, set_context
