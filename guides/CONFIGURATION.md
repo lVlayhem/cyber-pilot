@@ -32,9 +32,8 @@ cpt generate-agents
 
 This creates `cypilot/config/` with all editable config files.
 
-💬 `cypilot on` — enable Cypilot mode in your AI agent chat
-
-💬 `cypilot auto-config` — scan codebase, generate convention rules, register systems
+- 💬 `cypilot on` — enable Cypilot mode in your AI agent chat
+- 💬 `cypilot auto-config` — scan codebase, generate convention rules, register systems
 
 ---
 
@@ -48,25 +47,25 @@ These settings control **what the agent knows** when it works on your project. W
 
 Tell the agent which files to load for which tasks. This is the most impactful setting — it determines what context the agent sees for specific domains.
 
-💬 `cypilot add a rule: when working on authentication, always load docs/security.md`
-💬 `cypilot add a rule: when writing tests, always load docs/test-patterns.md`
-💬 `cypilot add a rule: when reviewing PRs, always load docs/review-guidelines.md`
+- 💬 `cypilot add a rule: when working on authentication, always load docs/security.md`
+- 💬 `cypilot add a rule: when writing tests, always load docs/test-patterns.md`
+- 💬 `cypilot add a rule: when reviewing PRs, always load docs/review-guidelines.md`
 
 ### Skill instructions (`config/SKILL.md`)
 
 Always-on instructions loaded into the agent's context on every request. Use these for project-wide invariants that apply everywhere — API envelope format, error handling strategy, logging approach.
 
-💬 `cypilot add a skill instruction: all REST endpoints must return JSON with {data, error, meta} envelope`
-💬 `cypilot add a skill instruction: never use print() for logging, always use the logger module`
+- 💬 `cypilot add a skill instruction: all REST endpoints must return JSON with {data, error, meta} envelope`
+- 💬 `cypilot add a skill instruction: never use print() for logging, always use the logger module`
 
 ### Project rules (`config/rules/`)
 
 Per-topic convention files — conventions, architecture, testing, patterns. The agent loads relevant rules based on the task. Unlike skill instructions (always loaded), rules are topic-scoped and can be more detailed without bloating every request.
 
-💬 `cypilot add a convention rule: all function names must use snake_case, no abbreviations`
-💬 `cypilot add an architecture rule: all services must communicate through the message bus, no direct imports`
-💬 `cypilot add a testing rule: every public function must have at least one unit test`
-💬 `cypilot auto-config` — regenerate all rules from codebase
+- 💬 `cypilot add a convention rule: all function names must use snake_case, no abbreviations`
+- 💬 `cypilot add an architecture rule: all services must communicate through the message bus, no direct imports`
+- 💬 `cypilot add a testing rule: every public function must have at least one unit test`
+- 💬 `cypilot auto-config` — regenerate all rules from codebase
 
 ---
 
@@ -109,10 +108,10 @@ Each ID kind has configurable properties:
 | `headings` | Which constraint headings can contain these IDs |
 | `references.TARGET.coverage` | Whether cross-references to TARGET artifact are mandatory |
 
-💬 `cypilot add a new ID kind "api-endpoint" to FEATURE constraints, template "cpt-{system}-api-{feature-slug}-{slug}", to_code = true`
-💬 `cypilot update the "algo" ID kind in FEATURE constraints: set to_code = false`
-💬 `cypilot update the "dod" ID kind in FEATURE constraints: set task = false, priority = false`
-💬 `cypilot add a cross-reference rule: DESIGN component IDs must reference DECOMPOSITION with coverage = true`
+- 💬 `cypilot add a new ID kind "api-endpoint" to FEATURE constraints, template "cpt-{system}-api-{feature-slug}-{slug}", to_code = true`
+- 💬 `cypilot update the "algo" ID kind in FEATURE constraints: set to_code = false`
+- 💬 `cypilot update the "dod" ID kind in FEATURE constraints: set task = false, priority = false`
+- 💬 `cypilot add a cross-reference rule: DESIGN component IDs must reference DECOMPOSITION with coverage = true`
 
 ### What `cpt validate` checks
 
@@ -171,8 +170,8 @@ def login_flow(request):
 
 Validation connects the chain: CDSL step `[x]` on `inst-validate` → code marker `@cpt-begin:...:inst-validate` must exist. Step `[ ]` on `inst-gen-token` → code marker must **not** exist yet. This gives you per-instruction implementation tracking.
 
-💬 `cypilot create FEATURE for user authentication` — generates a FEATURE with CDSL flows
-💬 `cypilot implement cpt-myapp-feature-auth-flow-login phase p1` — generates code with markers for all `[x]` p1 steps
+- 💬 `cypilot create FEATURE for user authentication` — generates a FEATURE with CDSL flows
+- 💬 `cypilot implement cpt-myapp-feature-auth-flow-login phase p1` — generates code with markers for all `[x]` p1 steps
 
 ### Traceability mode (in `artifacts.toml`)
 
@@ -181,8 +180,8 @@ Controls whether code `@cpt-*` markers are validated for an artifact type. Chang
 - **`FULL`** — all checks above are active, including code marker validation
 - **`DOCS-ONLY`** — code markers are prohibited; only document-level ID and cross-reference checks apply
 
-💬 `cypilot configure FEATURE artifacts to use DOCS-ONLY traceability`
-💬 `cypilot configure ADR artifacts to use FULL traceability`
+- 💬 `cypilot configure FEATURE artifacts to use DOCS-ONLY traceability`
+- 💬 `cypilot configure ADR artifacts to use FULL traceability`
 
 ### Code markers
 
@@ -197,22 +196,22 @@ def login_flow(request):
     # @cpt-end:cpt-myapp-feature-auth-flow-login:p1:inst-validate    ← block end
 ```
 
-💬 `cypilot implement cpt-myapp-feature-auth-flow-login with code traceability markers`
-💬 `cypilot check which IDs are missing code markers`
+- 💬 `cypilot implement cpt-myapp-feature-auth-flow-login with code traceability markers`
+- 💬 `cypilot check which IDs are missing code markers`
 
-🖥️ `cpt validate` — validates artifact IDs, cross-references, and code markers
-🖥️ `cpt spec-coverage` — shows which `to_code` IDs have/lack code markers
+- 🖥️ `cpt validate` — validates artifact IDs, cross-references, and code markers
+- 🖥️ `cpt spec-coverage` — shows which `to_code` IDs have/lack code markers
 
 ### ID search and navigation
 
-🖥️ `cpt list-ids` — list all IDs across all artifacts
-🖥️ `cpt list-ids --kind fr` — list only functional requirement IDs
-🖥️ `cpt where-defined --id cpt-myapp-fr-user-auth` — find where an ID is defined
-🖥️ `cpt where-used --id cpt-myapp-fr-user-auth` — find all references to an ID
+- 🖥️ `cpt list-ids` — list all IDs across all artifacts
+- 🖥️ `cpt list-ids --kind fr` — list only functional requirement IDs
+- 🖥️ `cpt where-defined --id cpt-myapp-fr-user-auth` — find where an ID is defined
+- 🖥️ `cpt where-used --id cpt-myapp-fr-user-auth` — find all references to an ID
 
-💬 `cypilot find all IDs of kind "flow" in the auth feature`
-💬 `cypilot show which artifacts reference cpt-myapp-fr-user-auth`
-💬 `cypilot check cross-reference coverage for DESIGN components`
+- 💬 `cypilot find all IDs of kind "flow" in the auth feature`
+- 💬 `cypilot show which artifacts reference cpt-myapp-fr-user-auth`
+- 💬 `cypilot check cross-reference coverage for DESIGN components`
 
 ---
 
@@ -226,31 +225,31 @@ These resources control **how artifacts are generated and validated**. Templates
 
 Each artifact kind (ADR, PRD, DESIGN, FEATURE, etc.) has resource files. Paths are in `config/core.toml` under `[kits.sdlc.resources]`.
 
-🖥️ `cpt resolve-vars --flat | grep adr` — find where ADR resources live
+- 🖥️ `cpt resolve-vars --flat | grep adr` — find where ADR resources live
 
 ### Templates — control artifact generation structure
 
 Templates define what sections a new artifact gets. Edit these when the default structure doesn't match your process — e.g., your ADRs need a "Migration Plan", or your PRDs need a "Compliance" section.
 
-💬 `cypilot add a required section "## Migration Plan" to the ADR template, after "## Consequences"`
-💬 `cypilot update the PRD template: add a "## Compliance Requirements" section`
-💬 `cypilot create a new FEATURE template section "## Performance Targets"`
+- 💬 `cypilot add a required section "## Migration Plan" to the ADR template, after "## Consequences"`
+- 💬 `cypilot update the PRD template: add a "## Compliance Requirements" section`
+- 💬 `cypilot create a new FEATURE template section "## Performance Targets"`
 
 ### Rules — control generation and validation behavior
 
 Rules tell the agent what to enforce when generating or validating an artifact. They are more specific than templates — e.g., "every flow must have error handling" or "components must list dependencies".
 
-💬 `cypilot add an ADR rule: the "Migration Plan" section must contain at least one checklist item`
-💬 `cypilot add a FEATURE rule: every flow must have at least one error handling path`
-💬 `cypilot update DESIGN rules: components must list all dependencies explicitly`
+- 💬 `cypilot add an ADR rule: the "Migration Plan" section must contain at least one checklist item`
+- 💬 `cypilot add a FEATURE rule: every flow must have at least one error handling path`
+- 💬 `cypilot update DESIGN rules: components must list all dependencies explicitly`
 
 ### Checklists — control semantic review criteria
 
 Checklists are used by the agent during artifact review (`cypilot analyze`). They define what the agent should verify beyond structural constraints — business logic, completeness, consistency.
 
-💬 `cypilot add to the DESIGN review checklist: verify that all external API calls have timeout and retry configuration`
-💬 `cypilot add to the FEATURE review checklist: check that every DoD item has a priority marker`
-💬 `cypilot add to the ADR review checklist: verify alternatives were evaluated with pros/cons`
+- 💬 `cypilot add to the DESIGN review checklist: verify that all external API calls have timeout and retry configuration`
+- 💬 `cypilot add to the FEATURE review checklist: check that every DoD item has a priority marker`
+- 💬 `cypilot add to the ADR review checklist: verify alternatives were evaluated with pros/cons`
 
 ### Structural constraints — control heading structure, ID placement
 
@@ -258,11 +257,11 @@ Constraints define the exact heading structure that `cpt validate` enforces. The
 
 Each heading entry in `constraints.toml` needs `id`, `level`, `required`, `pattern`.
 
-💬 `cypilot add a required level-2 heading "Migration Plan" to ADR constraints, id "adr-migration-plan"`
-💬 `cypilot update FEATURE constraints: make "## Performance Targets" optional instead of required`
+- 💬 `cypilot add a required level-2 heading "Migration Plan" to ADR constraints, id "adr-migration-plan"`
+- 💬 `cypilot update FEATURE constraints: make "## Performance Targets" optional instead of required`
 
-🖥️ `cpt validate-kits` — validate constraint definitions
-🖥️ `cpt validate` — validate artifacts against constraints
+- 🖥️ `cpt validate-kits` — validate constraint definitions
+- 🖥️ `cpt validate` — validate artifacts against constraints
 
 ---
 
@@ -276,17 +275,17 @@ These settings control **how the agent writes and reviews code**. Code rules app
 
 Apply when the agent writes or modifies source code. Use these for security policies, style enforcement, and antipattern prevention.
 
-💬 `cypilot add a code rule: all database queries must use parameterized statements, never string interpolation`
-💬 `cypilot add a code rule: all async functions must have explicit timeout handling`
-💬 `cypilot add a code rule: never import from internal modules using relative paths`
+- 💬 `cypilot add a code rule: all database queries must use parameterized statements, never string interpolation`
+- 💬 `cypilot add a code rule: all async functions must have explicit timeout handling`
+- 💬 `cypilot add a code rule: never import from internal modules using relative paths`
 
 ### Code review checklist
 
 Used when the agent reviews code. Each item becomes a check the agent performs and reports on.
 
-💬 `cypilot add to the code review checklist: verify no secrets or API keys are hardcoded`
-💬 `cypilot add to the code review checklist: check that all new public functions have docstrings`
-💬 `cypilot add to the code review checklist: verify error messages include correlation IDs`
+- 💬 `cypilot add to the code review checklist: verify no secrets or API keys are hardcoded`
+- 💬 `cypilot add to the code review checklist: check that all new public functions have docstrings`
+- 💬 `cypilot add to the code review checklist: verify error messages include correlation IDs`
 
 ---
 
@@ -300,8 +299,8 @@ Workflows are **multi-step agent procedures** — they define the exact sequence
 
 Paths are in `core.toml` as `kits.sdlc.resources.workflow_*`.
 
-💬 `cypilot update the PR review workflow: after fetching the diff, check if any migration files were changed and flag them`
-💬 `cypilot update the generate workflow: always ask about backward compatibility before writing`
+- 💬 `cypilot update the PR review workflow: after fetching the diff, check if any migration files were changed and flag them`
+- 💬 `cypilot update the generate workflow: always ask about backward compatibility before writing`
 
 ---
 
@@ -319,7 +318,7 @@ It has three layers:
 
 A system is a top-level grouping with a `name`, `slug`, and `kit`. The slug becomes part of every ID (`cpt-{slug}-...`). Most projects have one system; monorepos may have several.
 
-💬 `cypilot add a new system "billing" with slug "billing", using kit "sdlc", artifacts at billing/architecture`
+- 💬 `cypilot add a new system "billing" with slug "billing", using kit "sdlc", artifacts at billing/architecture`
 
 ### Autodetect patterns
 
@@ -333,13 +332,13 @@ Each artifact pattern has:
 | `traceability` | `FULL` (code markers validated) or `DOCS-ONLY` (no code markers) |
 | `required` | Whether the artifact must exist |
 
-💬 `cypilot add autodetect for FEATURE artifacts: pattern "features/*.md", traceability FULL, required false`
-💬 `cypilot update ADR autodetect pattern to "decisions/**/*.md"`
-💬 `cypilot configure PRD autodetect: set required = true`
+- 💬 `cypilot add autodetect for FEATURE artifacts: pattern "features/*.md", traceability FULL, required false`
+- 💬 `cypilot update ADR autodetect pattern to "decisions/**/*.md"`
+- 💬 `cypilot configure PRD autodetect: set required = true`
 
 You can also register a specific artifact manually (not via autodetect):
 
-💬 `cypilot add a manual artifact "Execution Plans" at architecture/features/execution-plans.md, kind FEATURE, traceability DOCS-ONLY`
+- 💬 `cypilot add a manual artifact "Execution Plans" at architecture/features/execution-plans.md, kind FEATURE, traceability DOCS-ONLY`
 
 ### Codebase entries
 
@@ -353,17 +352,17 @@ Each codebase entry tells Cypilot where source code lives and how to parse comme
 | `singleLineComments` | Comment prefixes, e.g. `["#"]`, `["//"]` |
 | `multiLineComments` | Multi-line comment delimiters, e.g. `[{start = '"""', end = '"""'}]` |
 
-💬 `cypilot add codebase "Frontend" at web/src, TypeScript (.ts, .tsx), single-line comments "//"`
-💬 `cypilot add codebase "Mobile" at mobile/lib, Dart (.dart), single-line comments "//"`
-💬 `cypilot update codebase "Backend": add multiLineComments for Python triple-quotes`
+- 💬 `cypilot add codebase "Frontend" at web/src, TypeScript (.ts, .tsx), single-line comments "//"`
+- 💬 `cypilot add codebase "Mobile" at mobile/lib, Dart (.dart), single-line comments "//"`
+- 💬 `cypilot update codebase "Backend": add multiLineComments for Python triple-quotes`
 
 ### Ignore patterns
 
 Exclude files from validation. Use this for test fixtures with synthetic `@cpt-*` markers, generated files, or legacy code you don't want validated yet.
 
-💬 `cypilot add an ignore pattern: tests/test_fixtures/** with reason "synthetic test data"`
+- 💬 `cypilot add an ignore pattern: tests/test_fixtures/** with reason "synthetic test data"`
 
-🖥️ `cpt validate` — validate registry and all artifacts
+- 🖥️ `cpt validate` — validate registry and all artifacts
 
 ---
 
