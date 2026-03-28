@@ -354,6 +354,21 @@ class WorkspaceConfig:
                 errors.append(f"Source '{name}' must have either 'path' or 'url'")
             if src.role not in VALID_ROLES:
                 errors.append(f"Source '{name}' has invalid role '{src.role}' (valid: {', '.join(sorted(VALID_ROLES))})")
+        if self.validation is not None and self.validation.allowed_content_languages:
+            try:
+                from .content_language import SUPPORTED_LANGUAGES as _SUPPORTED
+                unknown = [
+                    lang for lang in self.validation.allowed_content_languages
+                    if lang not in _SUPPORTED
+                ]
+                if unknown:
+                    errors.append(
+                        f"[validation] allowed_content_languages contains unknown code(s): "
+                        f"{', '.join(sorted(unknown))} "
+                        f"(supported: {', '.join(sorted(_SUPPORTED))})"
+                    )
+            except ImportError:
+                pass
         return errors
 
     def add_source(

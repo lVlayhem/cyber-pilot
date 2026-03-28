@@ -917,17 +917,13 @@ def _run_content_language_check(
 ) -> list:
     """Return language-violation error dicts for all validated .md artifacts.
 
-    Returns an empty list when:
-    - ``ws_ctx`` is None (no workspace config available), or
-    - ``[validation] allowed_content_languages`` is not configured, or
-    - no .md artifacts are in the validated set.
+    Uses project_root to discover the workspace config so the check works in
+    both workspace mode and single-repo mode.  Returns an empty list when
+    allowed_content_languages is not configured.
     """
-    if ws_ctx is None:
-        return []
-
     try:
         from ..utils.workspace import find_workspace_config as _find_ws
-        _ws_cfg, _ = _find_ws(ws_ctx.project_root)
+        _ws_cfg, _ws_err = _find_ws(project_root)
         if _ws_cfg is None or _ws_cfg.validation is None:
             return []
         allowed_langs = _ws_cfg.validation.allowed_content_languages
@@ -937,7 +933,11 @@ def _run_content_language_check(
         return []
 
     try:
-        from ..utils.content_language import build_allowed_ranges, scan_file as _scan_file
+        from ..utils.content_language import (
+            LangScanError as _LangScanError,
+            build_allowed_ranges,
+            scan_file as _scan_file,
+        )
         from ..utils.constraints import error as _error
         from ..utils import error_codes as _EC
     except Exception:
@@ -948,14 +948,23 @@ def _run_content_language_check(
     for artifact_path, _template_path, _artifact_type, _traceability, _kit_id in artifacts_to_validate:
         if artifact_path.suffix.lower() != ".md":
             continue
-        for v in _scan_file(artifact_path, allowed_ranges):
+        try:
+            for v in _scan_file(artifact_path, allowed_ranges):
+                results.append(_error(
+                    "language",
+                    f"Non-allowed characters [{v.bad_chars_preview()}] — {v.line_preview()}",
+                    path=artifact_path,
+                    line=v.lineno,
+                    code=_EC.CONTENT_LANGUAGE_VIOLATION,
+                    allowed_languages=allowed_langs,
+                ))
+        except _LangScanError as exc:
             results.append(_error(
                 "language",
-                f"Non-allowed characters [{v.bad_chars_preview()}] — {v.line_preview()}",
+                f"Cannot read file for language check: {exc.cause}",
                 path=artifact_path,
-                line=v.lineno,
-                code=_EC.CONTENT_LANGUAGE_VIOLATION,
-                allowed_languages=allowed_langs,
+                line=1,
+                code=_EC.FILE_READ_ERROR,
             ))
     return results
 

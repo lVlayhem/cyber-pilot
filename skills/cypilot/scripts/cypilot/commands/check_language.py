@@ -47,6 +47,7 @@ def cmd_check_language(argv: List[str]) -> int:
 
     from ..utils.content_language import (
         SUPPORTED_LANGUAGES,
+        LangScanError,
         build_allowed_ranges,
         scan_paths,
     )
@@ -66,7 +67,11 @@ def cmd_check_language(argv: List[str]) -> int:
             return 1
         allowed_langs = raw_langs
     else:
-        allowed_langs = _read_config_languages()
+        try:
+            allowed_langs = _read_config_languages()
+        except ValueError as exc:
+            ui.result({"status": "ERROR", "message": str(exc)})
+            return 1
 
     # ── Resolve scan roots ───────────────────────────────────────────────────
     if args.paths:
@@ -84,7 +89,11 @@ def cmd_check_language(argv: List[str]) -> int:
 
     # ── Scan ─────────────────────────────────────────────────────────────────
     allowed_ranges = build_allowed_ranges(allowed_langs)
-    violations = scan_paths(roots, allowed_ranges)
+    try:
+        violations = scan_paths(roots, allowed_ranges)
+    except LangScanError as exc:
+        ui.result({"status": "ERROR", "message": str(exc)})
+        return 1
 
     files_scanned = _count_md_files(roots)
 
@@ -131,21 +140,23 @@ def cmd_check_language(argv: List[str]) -> int:
 # ---------------------------------------------------------------------------
 
 def _read_config_languages() -> List[str]:
-    """Read allowed_content_languages from workspace config; fall back to ['en']."""
-    try:
-        from ..utils.context import get_context
-        from ..utils.workspace import find_workspace_config
+    """Read allowed_content_languages from workspace config; fall back to ['en'].
 
-        ctx = get_context()
-        if ctx is None:
-            return ["en"]
-        _ws_cfg, _ = find_workspace_config(ctx.project_root)
-        if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
-            langs = _ws_cfg.validation.allowed_content_languages  # type: ignore[union-attr]
-            if langs:
-                return langs
-    except Exception:
-        pass
+    Raises ValueError if the workspace config file exists but cannot be parsed.
+    """
+    from ..utils.context import get_context
+    from ..utils.workspace import find_workspace_config
+
+    ctx = get_context()
+    if ctx is None:
+        return ["en"]
+    _ws_cfg, _ws_err = find_workspace_config(ctx.project_root)
+    if _ws_err:
+        raise ValueError(f"Workspace config error: {_ws_err}")
+    if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
+        langs = _ws_cfg.validation.allowed_content_languages  # type: ignore[union-attr]
+        if langs:
+            return langs
     return ["en"]
 
 

@@ -10,7 +10,6 @@ outside all allowed ranges are flagged as violations.
 """
 
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -129,6 +128,15 @@ _SKIP_LINE_PATTERNS: List[re.Pattern] = [
 # ---------------------------------------------------------------------------
 
 
+class LangScanError(Exception):
+    """Raised when a file cannot be read for language scanning."""
+
+    def __init__(self, path: Path, cause: Exception) -> None:
+        super().__init__(f"Cannot read {path}: {cause}")
+        self.path = path
+        self.cause = cause
+
+
 @dataclass
 class LangViolation:
     """A single line that contains disallowed characters."""
@@ -198,8 +206,7 @@ def scan_file(
     try:
         text = path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError) as exc:
-        print(f"WARNING: cannot read {path}: {exc}", file=sys.stderr)
-        return []
+        raise LangScanError(path, exc) from exc
 
     for lineno, raw_line in enumerate(text.splitlines(), start=1):
         if _FENCE_START.match(raw_line):
@@ -256,6 +263,7 @@ def scan_paths(
 __all__ = [
     "SCRIPT_RANGES",
     "SUPPORTED_LANGUAGES",
+    "LangScanError",
     "LangViolation",
     "build_allowed_ranges",
     "is_allowed",
