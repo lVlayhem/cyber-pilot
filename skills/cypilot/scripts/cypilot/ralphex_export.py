@@ -1288,17 +1288,58 @@ def _read_plans_dir_from_config(config_path: Path) -> Optional[str]:
     return None
 
 
+def _extract_markdown_section_lines(content: str, section_name: str) -> list[str]:
+    target_heading = f"## {section_name}"
+    lines = content.splitlines()
+    section_lines: list[str] = []
+    in_section = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            if in_section:
+                break
+            if stripped == target_heading:
+                in_section = True
+            continue
+        if in_section:
+            section_lines.append(line)
+
+    return section_lines
+
+
+def _extract_fenced_toml_block(content: str) -> str:
+    opening_fence = "```toml"
+    opening_start = content.find(opening_fence)
+    if opening_start == -1:
+        return ""
+
+    after_fence = opening_start + len(opening_fence)
+    line_end = content.find("\n", after_fence)
+    if line_end == -1:
+        return ""
+    if any(char not in " \t\r" for char in content[after_fence:line_end]):
+        return ""
+
+    body_start = line_end + 1
+    closing_start = content.find("```", body_start)
+    if closing_start == -1:
+        return ""
+
+    return content[body_start:closing_start]
+
+
 def _parse_toml_frontmatter(content: str) -> dict:
     """Extract and parse TOML frontmatter from a phase file.
 
     Expects the TOML to be enclosed in a ```toml ... ``` code fence at the
     start of the file.
     """
-    match = re.search(r"```toml\s*\n(.*?)```", content, re.DOTALL)
-    if not match:
+    toml_block = _extract_fenced_toml_block(content)
+    if not toml_block:
         return {}
     try:
-        return tomllib.loads(match.group(1))
+        return tomllib.loads(toml_block)
     except (tomllib.TOMLDecodeError, ValueError):
         logger.warning("Failed to parse TOML frontmatter")
         return {}
@@ -1311,29 +1352,18 @@ def _extract_section_items(content: str, section_name: str) -> list[str]:
     For 'Acceptance Criteria' sections, extracts checkbox items.
     Stops at the next ## heading or end of content.
     """
-    # Find section start
-    pattern = rf"^## {re.escape(section_name)}\s*$"
-    match = re.search(pattern, content, re.MULTILINE)
-    if not match:
-        return []
-
-    # Extract section body until next ## or end
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    section_body = rest[:next_section.start()] if next_section else rest
-
     items: list[str] = []
-    for line in section_body.splitlines():
+    numbered_item_re = re.compile(r"^\d+\.\s+[^\n]+$")
+    checkbox_item_re = re.compile(r"^-\s+\[[ xX]\]\s+[^\n]+$")
+
+    for line in _extract_markdown_section_lines(content, section_name):
         stripped = line.strip()
-        # Numbered list items: "1. Do something"
-        num_match = re.match(r"^\d+\.\s+(.+)$", stripped)
-        if num_match:
-            items.append(num_match.group(1).rstrip("."))
+        if numbered_item_re.fullmatch(stripped):
+            _, _, item = stripped.partition(".")
+            items.append(item.strip().rstrip("."))
             continue
-        # Checkbox items: "- [ ] Something" or "- [x] Something"
-        cb_match = re.match(r"^-\s+\[[ x]\]\s+(.+)$", stripped)
-        if cb_match:
-            items.append(cb_match.group(1))
+        if checkbox_item_re.fullmatch(stripped):
+            items.append(stripped.split("]", 1)[1].strip())
             continue
 
     return items
@@ -1345,16 +1375,7 @@ def _extract_section_body(content: str, section_name: str) -> str:
     Returns the normalized paragraph/list text between ``## {section_name}``
     and the next ``##`` heading, excluding empty lines.
     """
-    pattern = rf"^## {re.escape(section_name)}\s*$"
-    match = re.search(pattern, content, re.MULTILINE)
-    if not match:
-        return ""
-
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    section_body = rest[:next_section.start()] if next_section else rest
-
-    lines = [line.strip() for line in section_body.splitlines() if line.strip()]
+    lines = [line.strip() for line in _extract_markdown_section_lines(content, section_name) if line.strip()]
     return " ".join(lines)
 
 
@@ -1364,24 +1385,14 @@ def _distill_guidance(content: str) -> list[str]:
     Only includes items from Engineering and Quality subsections to keep
     the exported guidance bounded.
     """
-    # Find Rules section
-    match = re.search(r"^## Rules\s*$", content, re.MULTILINE)
-    if not match:
-        return []
-
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    rules_body = rest[:next_section.start()] if next_section else rest
-
     guidance: list[str] = []
     in_target_subsection = False
+    subsection_header_re = re.compile(r"^###\s+[^\n]+$")
 
-    for line in rules_body.splitlines():
+    for line in _extract_markdown_section_lines(content, "Rules"):
         stripped = line.strip()
-        # Check for subsection headers
-        subsection_match = re.match(r"^###\s+(.+)$", stripped)
-        if subsection_match:
-            subsection_name = subsection_match.group(1).strip()
+        if subsection_header_re.fullmatch(stripped):
+            subsection_name = stripped[4:].strip()
             in_target_subsection = subsection_name in _GUIDANCE_SUBSECTIONS
             continue
 
