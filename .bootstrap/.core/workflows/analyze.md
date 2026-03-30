@@ -108,6 +108,8 @@ After `execution-protocol.md`, you have `KITS_PATH`, `TEMPLATE`, `CHECKLIST`, `E
 
 **MUST NOT proceed** to Phase 1 until all dependencies are available.
 
+Raw-input overflow rule: if the direct user prompt plus all provided files exceeds `500` total lines, the agent MUST NOT continue in direct analysis mode. It MUST route through `/cypilot-plan`, preserve the same request scope, and require the planner to materialize that raw input under `{cypilot_path}/.plans/{task-slug}/input/` before decomposition. The planner MUST obtain explicit user approval before creating that directory or executing the write-capable `{cpt_cmd} --json chunk-input ... --max-lines 300 --threshold-lines 500` command, and MUST pass `--include-stdin` when direct prompt text must be packaged together with provided files. This routing takes precedence over any later single-context bypass check inside planning.
+
 ## Phase 0.1: Plan Escalation Gate
 **MUST** estimate total context: target `rules.md` Validation, target `checklist.md`, artifact content, related cross-reference artifacts, expected analysis output, and ~30% reasoning overhead.
 

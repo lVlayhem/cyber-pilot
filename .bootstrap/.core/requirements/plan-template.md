@@ -49,12 +49,12 @@ total = {M}
 type = "{generate|analyze|implement}"
 title = "{short descriptive title}"
 depends_on = []
+input_manifest = ""
+input_signature = ""
 input_files = []
 output_files = []
 outputs = []
 inputs = []
-input_manifest = ""   # relative path to input/manifest.json when a raw-input package exists, empty string otherwise
-input_signature = ""  # SHA-256 input signature from chunk-input (or direct prompt hash); always populated for reuse checks
 ```
 
 Field rules:
@@ -64,10 +64,9 @@ Field rules:
 - `total` MUST equal total phase count.
 - `type` MUST be `generate`, `analyze`, or `implement`.
 - `depends_on` MUST be `[]` or integer phase numbers.
+- `input_manifest` and `input_signature` MUST be empty strings when no raw-input package is assigned to the phase; otherwise they MUST point to the authoritative `input/manifest.json` and its matching signature.
 - `input_files` and `inputs` are runtime-read items and MUST have matching Task read steps.
 - `output_files` are created or modified project files; `outputs` are intermediate files in `out/`.
-- `input_manifest` MUST be the relative path to `input/manifest.json` when a raw-input package exists, or an empty string otherwise.
-- `input_signature` MUST be the SHA-256 input signature produced by `chunk-input` (or computed from the direct prompt + provided file contents); always populated for reuse checks.
 
 ### Section 2: Preamble
 
@@ -137,6 +136,7 @@ Rules:
 - Template variables MUST be pre-resolved before inlining.
 - Inline template sections, checklist criteria, example excerpts, and file-pattern metadata.
 - Do NOT inline project artifacts, source code, or prior intermediate outputs.
+- When the plan carries raw-input chunk files under `input/`, keep them in `input_files` and read them at runtime from Task only from the package identified by `input_manifest` + `input_signature`; do NOT inline those chunks into the phase body.
 
 ### Section 7: Task
 
@@ -144,6 +144,7 @@ Rules:
 - Each step MUST produce a visible result.
 - No conditional branching.
 - Final step MUST self-verify against the acceptance criteria.
+- When `input_manifest` is non-empty, Task MUST read `input/manifest.json` before reading any assigned `input/*.md` chunks so the worker verifies it is using the matching authoritative package.
 
 ### Section 8: Acceptance Criteria
 
@@ -228,8 +229,6 @@ total = 4
 type = "generate"
 output_files = ["examples/overwork_alert/architecture/PRD.md"]
 outputs = ["out/phase-01-actors.md"]
-input_manifest = "input/manifest.json"
-input_signature = "sha256:a1b2c3d4e5f6..."
 ```
 
 ## Preamble

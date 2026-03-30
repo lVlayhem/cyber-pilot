@@ -99,6 +99,10 @@ def _cmd_spec_coverage(argv: List[str]) -> int:
     from .commands.spec_coverage import cmd_spec_coverage
     return cmd_spec_coverage(argv)
 
+def _cmd_chunk_input(argv: List[str]) -> int:
+    from .commands.chunk_input import cmd_chunk_input
+    return cmd_chunk_input(argv)
+
 # =============================================================================
 # ADAPTER COMMAND
 # =============================================================================
@@ -179,7 +183,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     analysis_commands = ["validate", "validate-kits", "validate-toc", "spec-coverage"]
     legacy_aliases = ["validate-code", "validate-rules"]
     kit_commands = ["kit"]
-    utility_commands = ["toc"]
+    utility_commands = ["toc", "chunk-input"]
     migration_commands = ["migrate", "migrate-config"]
     search_commands = [
         "init", "update",
@@ -218,6 +222,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "info": "Show project Cypilot configuration",
             "resolve-vars": "Resolve template variables to absolute paths",
             "toc": "Generate/update Table of Contents",
+            "chunk-input": "Chunk oversized workflow input into line-bounded Markdown files",
             "migrate": "Migrate v2 project to v3",
             "migrate-config": "Convert JSON configs to TOML",
             "workspace-init": "Initialize multi-repo workspace",
@@ -232,7 +237,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             ("Validation", ["validate", "validate-kits", "validate-toc", "spec-coverage"]),
             ("Search & Navigation", ["list-ids", "list-id-kinds", "get-content", "where-defined", "where-used"]),
             ("Kit Management", ["kit"]),
-            ("Utility", ["toc"]),
+            ("Utility", ["toc", "chunk-input"]),
             ("Workspace", ["workspace-init", "workspace-add", "workspace-info", "workspace-sync"]),
             ("Migration", ["migrate", "migrate-config"]),
             ("Delegation", ["delegate"]),
@@ -336,6 +341,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_validate_toc(rest)
     elif cmd == "spec-coverage":
         return _cmd_spec_coverage(rest)
+    elif cmd == "chunk-input":
+        return _cmd_chunk_input(rest)
     elif cmd == "migrate":
         return _cmd_migrate(rest)
     elif cmd == "migrate-config":

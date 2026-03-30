@@ -41,15 +41,16 @@ total = {total}
 type = "{type}"
 title = "{title}"
 depends_on = {depends_on}
+input_manifest = "{input_manifest}"
+input_signature = "{input_signature}"
 input_files = {input_files}
 output_files = {output_files}
 outputs = {outputs}
 inputs = {inputs}
 ```
+When the plan contains raw-input chunk files under `input/`, list the assigned chunk paths in `input_files` here exactly as they will be read at runtime. Use them only from the authoritative package referenced by `input_manifest`, and only when its `input_signature` matches the current plan input.
 
 ## Load Instructions
-When `input_manifest` is non-empty, the first load item MUST be `Read input/manifest.json` so the executing agent discovers the assigned chunk list before loading any `input/*.md` chunk files. The chunk files listed in subsequent load steps MUST be kept consistent with the chunks declared in `input_manifest`.
-
 {numbered list of load items}
 
 **Do NOT load**: {irrelevant files}
@@ -65,9 +66,11 @@ Required sections:
 5. User Decisions
 6. Rules
 7. Input
-8. Task — add `Read input/manifest.json` first when `input_manifest` is non-empty, then add `Read <file>` steps for runtime-read items (including assigned input chunks)
+8. Task — add `Read <file>` steps for runtime-read items, including every assigned `input/*.md` chunk
 9. Acceptance Criteria
 10. Output Format — use the required completion report + next-phase prompt from `plan-template.md`
+
+If `input_manifest` is non-empty, the Load Instructions MUST also identify `input/manifest.json` as the authoritative description of the raw-input package and keep the assigned chunk list consistent with that manifest.
 
 ## Context Budget
 - Phase file target: ≤ 600 lines

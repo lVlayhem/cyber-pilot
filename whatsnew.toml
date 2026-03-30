@@ -221,3 +221,12 @@ details = """\
 - **Fix: silent error swallowing** — ~15 broad `except Exception` handlers replaced with specific types so unexpected errors surface instead of being hidden
 - **Configuration guide** — new `guides/CONFIGURATION.md` covering core.toml, artifacts.toml, rules, WHEN-rules, and traceability\
 """
+
+["v3.5.0-beta"]
+summary = "Chunk-input command, input signature reuse, project-level extensibility"
+details = """\
+- **`cpt chunk-input`** — new command: splits oversized workflow input into line-bounded Markdown chunks for phased execution plans; includes dry-run mode for input signature computation
+- **Input signature reuse** — plan metadata now tracks `input_signature`; existing packages are reused when signatures match, avoiding redundant re-packaging
+- **Fix: backup preserved on preservation failure** — `chunk-input` now keeps the backup directory when file preservation fails, preventing user data loss
+- **Project-level extensibility** — manifest v2 with multi-layer pipeline enables project-level customization of agents, skills, and workflows through layered configuration\
+"""
