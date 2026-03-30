@@ -60,6 +60,7 @@ This workflow generates execution plans, not direct results. Use it when work ex
 - Do NOT hold all phase files in context simultaneously; compile and write one at a time.
 - If a phase compilation would exceed current context budget, checkpoint and use Compaction Recovery.
 - The plan manifest (`plan.toml`) is the recovery checkpoint and MUST be written before compilation.
+- If the raw task input itself exceeds `500` lines, materialize it under `{cypilot_path}/.plans/{task-slug}/input/`, chunk it to `<= 300` lines per file, and treat the resulting chunk files as the authoritative raw-input package for the plan. When the source includes direct prompt text, preserve that raw prompt as `input/direct-prompt.md` before chunking.
 
 Budget targets: Phase 0-1 `~200` lines, Phase 2 `~300`, Phase 3 `~500` per phase file, Phase 4 `~50`. The reference appendices below are runtime guidance only and do not consume plan-generation budget unless the user explicitly asks about execution behavior.
 
@@ -97,12 +98,16 @@ Context loaded for plan generation:
 **Gate**: do NOT proceed until ALL applicable navigation rules are processed, every required file referenced by navigation rules has been opened, and every retained slice needed for planning is captured in the manifest.
 
 ### 1.2 Estimate Compiled Size
-
-Estimate `template_lines + rules_lines + checklist_lines + existing_content_lines`. If `≤ 500`, STOP and direct the user to `/cypilot-generate` or `/cypilot-analyze`; only continue if `> 500`.
+  
+  Estimate `template_lines + rules_lines + checklist_lines + existing_content_lines`.
+  
+1. If oversized raw input already required planning, remain on the plan path even when the compiled estimate is `≤ 500`.
+2. Otherwise, if the estimate is `≤ 500`, continue to Phase 1.4 so `{task-slug}` can be resolved before checking for any existing authoritative raw-input package.
+3. If the estimate is `> 500`, continue planning.
 
 ### 1.3 Scan for User Interaction Points (CRITICAL)
-
-> **⛔ MANDATORY**: Missing interaction points is the #2 source of plan failures after missing rules.
+  
+  > **⛔ MANDATORY**: Missing interaction points is the #2 source of plan failures after missing rules.
 
 Recursively scan the target workflow, `rules.md`, `checklist.md`, `template.md`, and every applicable navigation-linked file for:
 
@@ -126,19 +131,39 @@ Interaction points scan complete:
 **Gate**: do NOT proceed if any source file was not scanned or any interaction point remains unclassified. If zero are found, report `No interaction points detected — task is fully autonomous` and omit User Decisions from phase files.
 
 ### 1.4 Identify Target
-
 Resolve generate/analyze → artifact kind, file path, and kit; implement → FEATURE spec path and CDSL blocks. Also compute `plan.target_key`, the canonical target identity used for deterministic plan-directory naming and reuse:
 - generate artifact target: prefer the single resolved output artifact path as `artifact-path:{absolute path}`; otherwise use `artifact:{artifact kind}:{explicit artifact name}`
 - analyze path target: use `path:{absolute path}` for the primary file/directory target; analyze artifact target follows the generate artifact-target rule
 - implement target: prefer `feature-path:{absolute FEATURE path}`; otherwise `feature-id:{FEATURE ID}`; otherwise `feature-title:{normalized FEATURE title}`
+Also compute `plan.input_signature`, the canonical raw-input identity derived from the current direct prompt text plus every provided file path/content pair. The signature is derived exclusively from each source's kind, path, and content hash — presentation-only metadata such as stdin display labels are excluded so that relabeling does not break reuse. To obtain the signature without writing any files, run:
+  `{cpt_cmd} --json chunk-input ... --output-dir {cypilot_path}/.plans/{task-slug}/input --dry-run`
+  (add `--include-stdin` when direct prompt text must be included).
+This signature is authoritative for raw-input package reuse; `plan.target_key` is not sufficient when the raw task input changes.
 Then report:
 ```text
 Plan scope:
   Type: {generate|analyze|implement}
   Target: {artifact kind or feature name}
   Target key: {canonical target identity}
+  Input signature: {sha256 of direct prompt + provided file contents}
   Estimated size: ~{N} lines
 ```
+After target identification, compute `{task-slug}` immediately for deterministic plan-directory naming and reuse.
+
+If `{cypilot_path}/.plans/{task-slug}/input/manifest.json` already exists, read its `input_signature` and compare it to the `input_signature` returned by the `--dry-run` invocation above. If they match exactly, remain on the plan path and reuse that authoritative raw-input package even when the compiled estimate is `≤ 500`.
+
+Otherwise, if the compiled estimate is `≤ 500` and oversized raw input did not already require planning, STOP and direct the user to `/cypilot-generate` or `/cypilot-analyze`.
+
+If the direct prompt text plus all provided files exceeds `500` total lines and no authoritative raw-input package with the same `plan.input_signature` exists yet, present:
+```text
+Oversized raw input detected (~{N} lines total).
+Preparing the plan will write chunk files under {cypilot_path}/.plans/{task-slug}/input/ by running:
+  {cpt_cmd} --json chunk-input ... --output-dir {cypilot_path}/.plans/{task-slug}/input --max-lines 300 --threshold-lines 500
+  Add --include-stdin when direct prompt text must be packaged together with provided files.
+  The command also writes {cypilot_path}/.plans/{task-slug}/input/manifest.json with `input_signature` and only replaces the existing package after the full replacement package is staged successfully.
+Proceed with raw-input materialization? [y/n]
+```
+Wait for explicit user confirmation before creating `{cypilot_path}/.plans/{task-slug}/input/` or executing `chunk-input` (without `--dry-run`). If the user approves (`y`), materialize the raw input there, record the emitted chunk paths plus `manifest.json`, and stop carrying the full raw input in active chat context once the package exists. If the user rejects (`n`), cancel the plan: do not create any files or directories, report `Plan cancelled — raw-input materialization declined`, and stop. This is a valid completion state for `/cypilot-plan`.
 
 ## Phase 2: Decompose
 
@@ -170,6 +195,8 @@ Select a strategy based on task type:
 
 Output a phase list containing phase number and title, covered sections / categories / blocks, dependencies, `input_files`, `output_files`, assigned interaction points, and intermediate results needed by later phases. If `lifecycle = cleanup`, append the reserved final Cleanup phase after all delivery phases and make it depend on the last non-cleanup phase.
 
+When an `input/manifest.json` package exists and its `input_signature` matches `plan.input_signature`, assign the relevant `input/*.md` chunk files into `input_files` for the phases that need them. If the full raw-input package would overflow one phase, add dedicated ingestion or consolidation phases instead of attaching every chunk everywhere.
+
 ### Intermediate Results Analysis
 
  Identify data flow between phases: incremental artifact output, extracted data, analysis notes, generated IDs, and decision logs.
@@ -195,9 +222,11 @@ Decomposition ({strategy} strategy):
   Overflow phases: 0
   Budget: 2000 lines max per phase
   
-  Proceed with manifest + brief generation? [y/n]
+  Proceed with manifest + brief generation after any required raw-input materialization? [y/n]
 ```
 Wait for user confirmation before proceeding.
+
+Include plan raw-input chunks from `input/` in `sum(input_files lines)` exactly as they will be read at runtime; do NOT hide them inside vague estimates.
 
 ## Phase 3: Compile Phase Files
 
@@ -223,6 +252,10 @@ execution_status = "not_started"     # not_started|in_progress|done|failed
 lifecycle_status = "pending"         # pending|ready|in_progress|manual_action_required|done|failed; use "done" immediately for `gitignore` once `.plans/` is gitignored
 plan_dir = "{cypilot_path}/.plans/{task-slug}"
 active_plan_dir = "{cypilot_path}/.plans/{task-slug}" # update if archived
+input_dir = "{cypilot_path}/.plans/{task-slug}/input" # omit or set "" when no raw-input package was created
+input_manifest = "{cypilot_path}/.plans/{task-slug}/input/manifest.json" # omit or set "" when no raw-input package was created
+input_signature = "{sha256 of direct prompt + provided file contents}" # omit or set "" when no raw-input package was created
+input_chunks = []                      # ordered `input/*.md` files emitted by `chunk-input`
 total_phases = {N}
 
 [[phases]]
@@ -246,6 +279,8 @@ checklist_sections = []             # H2 numbers from checklist.md (analyze task
 ### 3.2 Generate Compilation Briefs (from Template)
 
 For each phase, generate a compilation brief (`~50-80` lines). ALWAYS open and follow `{cypilot_path}/.core/requirements/brief-template.md`. Estimate kit file sizes with `wc -l`, list examples with `ls`, fill the brief from `plan.toml`, and write `{cypilot_path}/.plans/{task-slug}/brief-{NN}-{slug}.md`. A brief contains the context boundary, phase metadata, load instructions, phase file structure, and context budget — never copied kit content or the phase file itself.
+
+When `plan.input_chunks` is non-empty, each brief MUST include the specific `input/*.md` chunk files assigned to that phase in both `input_files` metadata and Load Instructions, with runtime-read steps for every listed chunk.
 
 ### 3.2A Stop After Briefs & Ask For Next Step
 
@@ -559,6 +594,10 @@ All plan data lives in `{cypilot_path}/.plans/{task-slug}/`:
 .plans/
   generate-prd-myapp/
     plan.toml
+    input/
+      manifest.json
+      direct-prompt.md
+      001-01-request-part-01.md
     brief-01-overview.md
     brief-02-requirements.md
     phase-01-overview.md
@@ -568,16 +607,15 @@ All plan data lives in `{cypilot_path}/.plans/{task-slug}/`:
       phase-01-id-scheme.md
       phase-02-req-ids.md
 ```
-Compute `plan.target_key` first and use it as the authoritative identity for plan-directory reuse; directory naming stays human-readable, while equality/reuse checks compare the exact key.
+Compute `plan.target_key` first for deterministic naming, but use it for plan-directory reuse only together with the current raw-input identity. Directory naming stays human-readable; equality/reuse checks compare `type + plan.target_key + plan.input_signature` whenever raw-input packaging is in scope.
 Naming conventions:
 - generate: `{type}-{artifact_kind}-{artifact_slug}`. Use the explicit artifact name when available; otherwise use the output path stem.
 - analyze: `{type}-{artifact_kind}-{artifact_slug}` for artifact-oriented reviews, or `{type}-path-{target_path_slug}` when the primary target is a file or directory path. For path targets, if the absolute target path is under `{project_root}`, strip `{project_root}/` first and normalize that relative path (`{project_root}/src/api/users.py` → `analyze-path-src-api-users-py`); otherwise normalize the absolute-path segments.
 - implement: `{type}-feature-{feature_slug}`. Derive `{feature_slug}` from the FEATURE ID first; if no ID exists, use the FEATURE title; if neither exists, use the FEATURE file stem.
 - normalization: lowercase, replace path separators / spaces / punctuation with `-`, collapse repeated `-`, trim leading/trailing `-`.
-- collision handling: if an existing non-archived plan has the same `type` and the same `plan.target_key`, reuse its directory; otherwise append `-2`, `-3`, ... using the lowest available suffix.
+- collision handling: if an existing non-archived plan has the same `type`, the same `plan.target_key`, and the same `plan.input_signature` (or both plans have no raw-input package), reuse its directory; otherwise append `-2`, `-3`, ... using the lowest available suffix.
 - phase file: `phase-{NN}-{slug}.md`
 - plan manifest: always `plan.toml`
-
 Lifecycle behavior is controlled by the strategy selected in Phase 2.1 and recorded in `plan.toml`; if archived, `active_plan_dir` points to the archive path, and if cleaned up, `plan.toml` remains as the terminal receipt even after compiled plan artifacts are removed.
 
 ## Execution Log

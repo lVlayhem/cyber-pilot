@@ -65,6 +65,52 @@ def _parse_github_source(source: str) -> Tuple[str, str, str]:
 # @cpt-end:cpt-cypilot-algo-kit-github-helpers:p1:inst-parse-source
 
 
+_GITHUB_TARBALL_MAX_MEMBERS = 4096
+_GITHUB_TARBALL_MAX_TOTAL_SIZE = 512 * 1024 * 1024
+_GITHUB_TARBALL_MAX_EXPANSION_RATIO = 200
+
+
+def _validate_tar_archive_before_extract(
+    tar: tarfile.TarFile,
+    tar_path: Path,
+    tmp_dir: Path,
+) -> None:
+    members = tar.getmembers()
+    if len(members) > _GITHUB_TARBALL_MAX_MEMBERS:
+        raise RuntimeError(
+            "Archive extraction blocked: too many archive entries "
+            f"({len(members)} > {_GITHUB_TARBALL_MAX_MEMBERS})"
+        )
+
+    tmp_dir_resolved = tmp_dir.resolve()
+    total_size = 0
+    for member in members:
+        member_path = (tmp_dir / member.name).resolve()
+        if not member_path.is_relative_to(tmp_dir_resolved):
+            raise RuntimeError(
+                f"Unsafe path in archive: {member.name!r}"
+            )
+        if member.isfile():
+            total_size += member.size
+            if total_size > _GITHUB_TARBALL_MAX_TOTAL_SIZE:
+                raise RuntimeError(
+                    "Archive extraction blocked: total extracted size exceeds "
+                    f"limit ({total_size} > {_GITHUB_TARBALL_MAX_TOTAL_SIZE} bytes)"
+                )
+
+    archive_size = tar_path.stat().st_size
+    if total_size > 0 and archive_size <= 0:
+        raise RuntimeError(
+            "Archive extraction blocked: invalid compressed archive size "
+            f"({archive_size} bytes)"
+        )
+    if archive_size > 0 and total_size > archive_size * _GITHUB_TARBALL_MAX_EXPANSION_RATIO:
+        raise RuntimeError(
+            "Archive extraction blocked: suspicious compression expansion ratio "
+            f"({total_size}/{archive_size} > {_GITHUB_TARBALL_MAX_EXPANSION_RATIO}x)"
+        )
+
+
 # @cpt-begin:cpt-cypilot-algo-kit-github-helpers:p1:inst-download
 def _download_kit_from_github(
     owner: str,
@@ -111,12 +157,7 @@ def _download_kit_from_github(
     # the built-in ``filter="data"`` safeguard for defence-in-depth.
     try:
         with tarfile.open(tar_path, "r:gz") as tar:
-            for member in tar.getmembers():
-                member_path = (tmp_dir / member.name).resolve()
-                if not member_path.is_relative_to(tmp_dir.resolve()):
-                    raise RuntimeError(
-                        f"Unsafe path in archive: {member.name!r}"
-                    )
+            _validate_tar_archive_before_extract(tar, tar_path, tmp_dir)
             tar.extractall(path=tmp_dir, filter="data")  # noqa: S202
     except RuntimeError:
         shutil.rmtree(tmp_dir, ignore_errors=True)

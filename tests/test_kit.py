@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import sys
+import tarfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path, PureWindowsPath
@@ -1545,38 +1546,120 @@ class TestParseGithubSource(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestDownloadKitFromGithub(unittest.TestCase):
-    def test_success(self):
-        """Mocked download: creates tarball, extracts to temp dir."""
-        import tarfile, tempfile
-        from cypilot.commands.kit import _download_kit_from_github
-
-        # Build a real tarball in memory
+    def _make_tarball_bytes(self, entries):
         tar_bytes = io.BytesIO()
         with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
-            # GitHub tarballs have one top-level dir
-            info = tarfile.TarInfo(name="owner-repo-abc123/")
-            info.type = tarfile.DIRTYPE
-            tar.addfile(info)
-            data = b"version = 1\n"
-            info2 = tarfile.TarInfo(name="owner-repo-abc123/conf.toml")
-            info2.size = len(data)
-            tar.addfile(info2, io.BytesIO(data))
+            for entry in entries:
+                info = tarfile.TarInfo(name=entry["name"])
+                info.type = entry.get("type", tarfile.REGTYPE)
+                data = entry.get("data", b"")
+                info.size = 0 if info.isdir() else len(data)
+                tar.addfile(info, None if info.isdir() else io.BytesIO(data))
         tar_bytes.seek(0)
+        return tar_bytes
 
+    def _fake_response(self, tar_bytes):
         class FakeResp:
             def read(self, n=-1):
                 return tar_bytes.read(n)
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 pass
 
-        with patch("cypilot.commands.kit.urllib.request.urlopen", return_value=FakeResp()):
+        return FakeResp()
+
+    def test_success(self):
+        """Mocked download: creates tarball, extracts to temp dir."""
+        from cypilot.commands.kit import _download_kit_from_github
+
+        tar_bytes = self._make_tarball_bytes([
+            {"name": "owner-repo-abc123/", "type": tarfile.DIRTYPE},
+            {"name": "owner-repo-abc123/conf.toml", "data": b"version = 1\n"},
+        ])
+
+        with patch(
+            "cypilot.commands.kit.urllib.request.urlopen",
+            return_value=self._fake_response(tar_bytes),
+        ):
             result_dir, ver = _download_kit_from_github("owner", "repo", "v1.0")
             self.assertTrue(result_dir.is_dir())
             self.assertEqual(ver, "v1.0")
+            self.assertEqual(
+                (result_dir / "conf.toml").read_text(encoding="utf-8"),
+                "version = 1\n",
+            )
             # Cleanup
             shutil.rmtree(result_dir.parent, ignore_errors=True)
+
+    def test_unsafe_path_rejected(self):
+        from cypilot.commands.kit import _download_kit_from_github
+
+        tar_bytes = self._make_tarball_bytes([
+            {"name": "owner-repo-abc123/", "type": tarfile.DIRTYPE},
+            {"name": "../escape.txt", "data": b"boom"},
+        ])
+
+        with patch(
+            "cypilot.commands.kit.urllib.request.urlopen",
+            return_value=self._fake_response(tar_bytes),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Unsafe path in archive"):
+                _download_kit_from_github("owner", "repo", "v1.0")
+
+    def test_too_many_members_rejected(self):
+        import cypilot.commands.kit as kit_module
+        from cypilot.commands.kit import _download_kit_from_github
+
+        tar_bytes = self._make_tarball_bytes([
+            {"name": "owner-repo-abc123/", "type": tarfile.DIRTYPE},
+            {"name": "owner-repo-abc123/a.txt", "data": b"a"},
+            {"name": "owner-repo-abc123/b.txt", "data": b"b"},
+        ])
+
+        with patch.object(kit_module, "_GITHUB_TARBALL_MAX_MEMBERS", 2):
+            with patch(
+                "cypilot.commands.kit.urllib.request.urlopen",
+                return_value=self._fake_response(tar_bytes),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "too many archive entries"):
+                    _download_kit_from_github("owner", "repo", "v1.0")
+
+    def test_total_uncompressed_size_rejected(self):
+        import cypilot.commands.kit as kit_module
+        from cypilot.commands.kit import _download_kit_from_github
+
+        tar_bytes = self._make_tarball_bytes([
+            {"name": "owner-repo-abc123/", "type": tarfile.DIRTYPE},
+            {"name": "owner-repo-abc123/big.txt", "data": b"abcdef"},
+        ])
+
+        with patch.object(kit_module, "_GITHUB_TARBALL_MAX_TOTAL_SIZE", 5):
+            with patch(
+                "cypilot.commands.kit.urllib.request.urlopen",
+                return_value=self._fake_response(tar_bytes),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "total extracted size exceeds"):
+                    _download_kit_from_github("owner", "repo", "v1.0")
+
+    def test_suspicious_compression_ratio_rejected(self):
+        import cypilot.commands.kit as kit_module
+        from cypilot.commands.kit import _download_kit_from_github
+
+        tar_bytes = self._make_tarball_bytes([
+            {"name": "owner-repo-abc123/", "type": tarfile.DIRTYPE},
+            {"name": "owner-repo-abc123/repeated.txt", "data": b"A" * 4096},
+        ])
+
+        with patch.object(kit_module, "_GITHUB_TARBALL_MAX_EXPANSION_RATIO", 1):
+            with patch(
+                "cypilot.commands.kit.urllib.request.urlopen",
+                return_value=self._fake_response(tar_bytes),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "suspicious compression expansion ratio"):
+                    _download_kit_from_github("owner", "repo", "v1.0")
 
     def test_network_error(self):
         from cypilot.commands.kit import _download_kit_from_github

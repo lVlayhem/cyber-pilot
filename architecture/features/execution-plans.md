@@ -10,16 +10,22 @@
   - [1.4 References](#14-references)
 - [2. Actor Flows (CDSL)](#2-actor-flows-cdsl)
   - [Generate Execution Plan](#generate-execution-plan)
+  - [Chunk Raw Input Package](#chunk-raw-input-package)
   - [Execute Phase](#execute-phase)
   - [Check Plan Status](#check-plan-status)
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Decompose Task](#decompose-task)
   - [Compile Phase File](#compile-phase-file)
   - [Enforce Line Budget](#enforce-line-budget)
+  - [Normalize Raw Input Sources](#normalize-raw-input-sources)
+  - [Compute Raw Input Chunk Ranges](#compute-raw-input-chunk-ranges)
+  - [Write Raw Input Package](#write-raw-input-package)
 - [4. States (CDSL)](#4-states-cdsl)
+  - [Raw Input Package Lifecycle](#raw-input-package-lifecycle)
   - [Plan Lifecycle](#plan-lifecycle)
   - [Phase Lifecycle](#phase-lifecycle)
 - [5. Definitions of Done](#5-definitions-of-done)
+  - [Raw Input Package](#raw-input-package)
   - [Plan Workflow](#plan-workflow)
   - [Phase File Template](#phase-file-template)
   - [Decomposition Strategies](#decomposition-strategies)
@@ -97,6 +103,32 @@ Execution Plans solve this by moving decomposition from the user to the tool. Th
    3. [x] - `p1` - Agent writes phase file: `phase-{NN}-{slug}.md` - `inst-write-phase`
 9. [x] - `p1` - Agent writes plan manifest: `plan.toml` with all phase metadata - `inst-write-manifest`
 10. [x] - `p1` - Agent reports plan summary: total phases, estimated lines per phase, execution order - `inst-report`
+
+### Chunk Raw Input Package
+
+- [x] `p1` - **ID**: `cpt-cypilot-flow-execution-plans-chunk-raw-input`
+
+**Actor**: `cpt-cypilot-actor-user`
+
+**Success Scenarios**:
+- User or planner invokes `cpt chunk-input ... --output-dir ...` → command emits deterministic `input/*.md` chunk files and JSON metadata
+- User combines file inputs with direct prompt text via `--include-stdin` → raw prompt is preserved as `direct-prompt.md` and included in chunk metadata
+- Planner encounters an existing `input/manifest.json` whose `input_signature` matches the current raw input → package is safely reused without re-chunking
+
+**Error Scenarios**:
+- Input file is missing or unreadable → command returns JSON `ERROR`
+- `stdin` is required but empty → command returns JSON `ERROR`
+- Output directory cannot be written → command returns JSON `ERROR`
+
+**Steps**:
+1. [x] - `p1` - User or planner invokes `cpt chunk-input [<path> ...] --output-dir <path> [--include-stdin]` - `inst-user-chunk-input`
+2. [x] - `p1` - Command parses arguments and validates required numeric thresholds - `inst-parse-args`
+3. [x] - `p1` - Command reads file sources and optional `stdin` according to invocation mode - `inst-read-sources`
+4. [x] - `p1` - Command computes total line count, canonical `input_signature`, and whether planning is required - `inst-evaluate-threshold`
+5. [x] - `p1` - Command stages a complete replacement package in a temporary sibling directory instead of deleting the active package first - `inst-prepare-output`
+6. [x] - `p1` - **IF** `stdin` participated → command preserves raw direct prompt as `direct-prompt.md` inside the staged package - `inst-store-direct-prompt`
+7. [x] - `p1` - Command writes deterministic numbered chunk files bounded by `max_lines` and `manifest.json` carrying `input_signature` and chunk metadata - `inst-write-chunks`
+8. [x] - `p1` - Command atomically swaps the staged package into place; on write failure, the previously active package remains intact - `inst-return-result`
 
 ### Execute Phase
 
@@ -214,7 +246,66 @@ Execution Plans solve this by moving decomposition from the user to the tool. Th
 4. [x] - `p1` - **IF** lines > maximum (1000) - `inst-over-max`
    1. [x] - `p1` - **RETURN** split recommendation: suggest splitting this phase into N sub-phases with proposed scope boundaries - `inst-recommend-split`
 
+### Normalize Raw Input Sources
+
+- [x] `p1` - **ID**: `cpt-cypilot-algo-execution-plans-chunk-normalize-input`
+
+**Input**: CLI paths, `stdin`, `stdin_label`
+
+**Output**: Ordered normalized raw-input sources with labels, display names, paths, text, and line counts
+
+**Steps**:
+1. [x] - `p1` - Normalize newline style for every input source before counting or chunking - `inst-normalize-newlines`
+2. [x] - `p1` - Derive stable source labels from file stems or the supplied `stdin` label - `inst-slugify-source`
+3. [x] - `p1` - Resolve file paths, read file contents as UTF-8, and reject missing inputs - `inst-read-file-source`
+4. [x] - `p1` - Read `stdin` only when no file paths were provided or when `--include-stdin` explicitly requests mixed input - `inst-read-stdin-source`
+5. [x] - `p1` - **RETURN** normalized sources in deterministic order with `kind`, `display_name`, `path`, `text`, and `line_count` - `inst-return-sources`
+
+### Compute Raw Input Chunk Ranges
+
+- [x] `p1` - **ID**: `cpt-cypilot-algo-execution-plans-chunk-ranges`
+
+**Input**: `total_lines`, `max_lines`
+
+**Output**: Ordered inclusive `(start_line, end_line)` ranges for one source
+
+**Steps**:
+1. [x] - `p1` - **IF** the source has zero effective lines → return a single empty range `(1, 0)` - `inst-empty-range`
+2. [x] - `p1` - Iterate from line 1 in windows of size `max_lines` - `inst-range-loop`
+3. [x] - `p1` - Cap each chunk end line at `total_lines` - `inst-range-cap`
+4. [x] - `p1` - **RETURN** ordered inclusive chunk ranges - `inst-return-ranges`
+
+### Write Raw Input Package
+
+- [x] `p1` - **ID**: `cpt-cypilot-algo-execution-plans-chunk-write`
+
+**Input**: Normalized sources, output directory, `max_lines`
+
+**Output**: Written raw-input package files plus ordered chunk metadata
+
+**Steps**:
+1. [x] - `p1` - Create the parent directory if it does not already exist and allocate a temporary staging directory beside the target package - `inst-create-output-dir`
+2. [x] - `p1` - **IF** a `stdin` source exists → write `direct-prompt.md` into the staged package and record its stored file - `inst-write-direct-prompt`
+3. [x] - `p1` - Compute chunk ranges per source and render chunk text with normalized trailing newline handling - `inst-build-chunk-text`
+4. [x] - `p1` - Write deterministic filenames `NNN-SS-label-part-PP.md` and collect per-chunk metadata - `inst-write-chunk-file`
+5. [x] - `p1` - Write `manifest.json` with `input_signature`, source metadata, and chunk metadata for authoritative package reuse checks - `inst-write-package-manifest`
+6. [x] - `p1` - Replace the live package only after the staged package is fully written; restore the previous package on `OSError` - `inst-return-chunks`
+
 ## 4. States (CDSL)
+
+### Raw Input Package Lifecycle
+
+- [x] `p1` - **ID**: `cpt-cypilot-state-execution-plans-raw-input-package`
+
+**States**: absent, materialized, reused, failed
+
+**Initial State**: absent
+
+**Transitions**:
+1. [x] - `p1` - **FROM** absent **TO** materialized **WHEN** `chunk-input` writes a new raw-input package successfully - `inst-package-materialized`
+2. [x] - `p1` - **FROM** materialized **TO** materialized **WHEN** `chunk-input` re-runs in place after cleaning stale generated outputs - `inst-package-rewritten`
+3. [x] - `p1` - **FROM** materialized **TO** reused **WHEN** the planner detects and reuses an existing authoritative raw-input package - `inst-package-reused`
+4. [x] - `p1` - **FROM** absent **TO** failed **WHEN** source loading or package writing fails - `inst-package-failed`
 
 ### Plan Lifecycle
 
@@ -244,6 +335,28 @@ Execution Plans solve this by moving decomposition from the user to the tool. Th
 4. [x] - `p1` - **FROM** failed **TO** in_progress **WHEN** user retries phase - `inst-phase-retry`
 
 ## 5. Definitions of Done
+
+### Raw Input Package
+
+- [x] `p1` - **ID**: `cpt-cypilot-dod-execution-plans-raw-input`
+
+The system MUST provide a `chunk-input` command that takes file paths and/or `stdin` input and emits a deterministic raw-input package in the output directory. The package MUST contain:
+- `manifest.json` with `input_signature`, source metadata, and ordered chunk metadata
+- `direct-prompt.md` (if `stdin` was used)
+- `NNN-SS-label-part-PP.md` chunk files (where `NNN` is the chunk number, `SS` is the source sequence number (zero-padded index), `label` is the source display name, and `PP` is the part number)
+
+Package reuse MUST depend on an exact `input_signature` match, not only on plan target identity or directory existence. Re-running the command with changed raw input MUST preserve the previous live package unless the replacement package is fully written and successfully swapped into place.
+
+**Implements**:
+- `cpt-cypilot-flow-execution-plans-chunk-raw-input`
+- `cpt-cypilot-algo-execution-plans-chunk-normalize-input`
+- `cpt-cypilot-algo-execution-plans-chunk-ranges`
+- `cpt-cypilot-algo-execution-plans-chunk-write`
+
+**Constraints**: `cpt-cypilot-constraint-markdown-contract`
+
+**Touches**:
+- Directory: `{cypilot_path}/.plans/{task-slug}/input/` (new, contains raw-input package)
 
 ### Plan Workflow
 
@@ -309,10 +422,13 @@ The file MUST include budget enforcement rules (500-line target, 1000-line max) 
 
 The system MUST store execution plans in `{cypilot_path}/.plans/{task-slug}/` directory. The directory MUST be added to `.gitignore` automatically on first use. Each plan directory contains:
 - `plan.toml` — manifest with phase metadata and status tracking
+- `input/` — authoritative raw-input package when oversized workflow input was materialized (`manifest.json`, optional `direct-prompt.md`, plus numbered chunk files)
 - `phase-{NN}-{slug}.md` — self-contained phase files
 
 **Implements**:
+- `cpt-cypilot-flow-execution-plans-chunk-raw-input`
 - `cpt-cypilot-flow-execution-plans-generate-plan`
+- `cpt-cypilot-state-execution-plans-raw-input-package`
 - `cpt-cypilot-state-execution-plans-plan-lifecycle`
 - `cpt-cypilot-state-execution-plans-phase-lifecycle`
 
@@ -351,6 +467,7 @@ This feature owns the canonical plan structure and export contract definition. C
 - [x] Generated phase files respect line budget: ≤500 lines target, ≤1000 lines maximum
 - [x] Phase files can be executed by any AI agent without Cypilot context or tools
 - [x] Plan manifest (`plan.toml`) correctly tracks phase status across executions
+- [x] Oversized workflow input can be materialized into deterministic `input/*.md` chunk files with `direct-prompt.md` preservation and stale-output cleanup
 - [ ] `.plans/` directory is automatically git-ignored *(only `.archive/` is currently gitignored)*
 - [ ] Cypilot plan outputs can be exported into ralphex-compatible Markdown plan files under the ralphex-resolved `plans_dir`
 - [ ] Exported plans contain `## Validation Commands` and `### Task N:` sections matching ralphex grammar
