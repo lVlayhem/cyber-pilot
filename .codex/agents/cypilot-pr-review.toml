@@ -1,5 +1,3 @@
-# Cypilot subagent definition for OpenAI Codex: cypilot-pr-review
-
 name = "cypilot-pr-review"
 description = "Cypilot PR reviewer. Use to review pull requests with structured checklist-based analysis. Runs in a separate context so detailed review output stays isolated from the main conversation."
 developer_instructions = """

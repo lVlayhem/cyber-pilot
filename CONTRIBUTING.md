@@ -102,26 +102,26 @@ Cypilot has **two independent version tracks**.
 
 | File | Example | What it versions | When to bump |
 |------|---------|------------------|--------------|
-| `skills/cypilot/scripts/cypilot/__init__.py` | `v3.0.6-beta` | **Skill engine** — the core validation/generation logic | Any change to skill engine code |
-| `pyproject.toml` (`version`) | `3.0.9-beta` | **CLI proxy** — installed via `pipx` | Changes to proxy routing, caching, or resolution |
+| `skills/cypilot/scripts/cypilot/__init__.py` | `v3.4.0-beta` | **Skill engine** — the core validation/generation logic | Any change to skill engine code |
+| `pyproject.toml` (`version`) | `3.4.0-beta` | **CLI proxy** — installed via `pipx` | Changes to proxy routing, caching, or resolution |
 
 ### Releasing a New Version
 
 1. **Create a release branch** from `main`:
    ```bash
    git checkout main && git pull --rebase
-   git checkout -b v3.0.6-beta
+   git checkout -b v3.4.0-beta
    ```
 
 2. **Bump the skill engine version** in `skills/cypilot/scripts/cypilot/__init__.py`:
    ```python
-   __version__ = "v3.0.6-beta"
+   __version__ = "v3.4.0-beta"
    ```
 
 3. **If proxy changed**, bump version in `pyproject.toml`:
    ```toml
    # pyproject.toml
-   version = "3.0.9-beta"
+   version = "3.4.0-beta"
    ```
 
 4. **Sync bootstrap**:
@@ -138,8 +138,8 @@ Cypilot has **two independent version tracks**.
 
 6. **Tag and release** after merge to `main`:
    ```bash
-   git tag v3.0.6-beta
-   git push origin v3.0.6-beta
+   git tag v3.4.0-beta
+   git push origin v3.4.0-beta
    ```
 
 ---
@@ -148,7 +148,7 @@ Cypilot has **two independent version tracks**.
 
 ```
 main                          # Stable, all CI must pass
-└── v3.0.6-beta               # Feature/release branch
+└── v3.4.0-beta               # Feature/release branch
 ```
 
 - Branch from `main` for each version
@@ -226,6 +226,7 @@ All CI is driven through `make`. No virtual environment required — tools run v
 | `make self-check` | Validate SDLC kit examples against their own templates | Yes |
 | `make check-versions` | Check version consistency across components | Yes |
 | `make spec-coverage` | Check spec coverage (≥80% overall, ≥70% per file) | Yes |
+| `make pylint` | Pylint static analysis (staged rollout) | Yes |
 | `make vulture` | Dead code scan (report only) | — |
 | `make vulture-ci` | Dead code scan (fails on findings) | Yes |
 | `make install` | Install pytest + pytest-cov via pipx | — |
@@ -235,17 +236,19 @@ All CI is driven through `make`. No virtual environment required — tools run v
 
 ### GitHub Actions
 
-CI runs on every push to `main` and every PR targeting `main`. Seven parallel jobs:
+CI runs on every push to `main` and every PR targeting `main`. Nine parallel jobs:
 
 1. **Test** — `make test` on Python 3.11, 3.12, 3.13, 3.14
 2. **Coverage** — `make test-coverage` on Python 3.14 (≥90% gate)
-3. **Vulture** — `make vulture-ci` dead code scan
-4. **Versions** — `make check-versions` (proxy sync, bootstrap sync)
-5. **Spec Coverage** — `make spec-coverage` (≥80% overall, ≥70% per file)
-6. **Validate** — `make validate` + `make self-check` on Python 3.11–3.14
-7. **Validate Kits** — `make validate-kits` on Python 3.11–3.14
+3. **SonarQube** — SonarCloud scan with coverage reporting (requires `SONAR_TOKEN` secret)
+4. **Pylint** — `make pylint` static analysis (staged rollout — currently 12 checks enabled)
+5. **Vulture** — `make vulture-ci` dead code scan
+6. **Versions** — `make check-versions` (proxy sync, bootstrap sync)
+7. **Spec Coverage** — `make spec-coverage` (≥80% overall, ≥70% per file)
+8. **Validate** — `make validate` + `make self-check` on Python 3.11–3.14
+9. **Validate Kits** — `make validate-kits` on Python 3.11–3.14
 
-All seven must pass before merge.
+All jobs must pass before merge.
 
 ---
 

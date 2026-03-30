@@ -1,14 +1,14 @@
 # <p align="center"><img src="images/cypilot-kit.png" alt="Cypilot Banner" width="100%" /></p>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.3-green.svg)]()
+[![Version](https://img.shields.io/badge/version-3.4-green.svg)]()
 [![Status](https://img.shields.io/badge/status-active-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)]()
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=cyberfabric_cyber-pilot&metric=coverage)](https://sonarcloud.io/summary/new_code?id=cyberfabric_cyber-pilot)
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=cyberfabric_cyber-pilot&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=cyberfabric_cyber-pilot)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=cyberfabric_cyber-pilot&metric=bugs)](https://sonarcloud.io/summary/new_code?id=cyberfabric_cyber-pilot)
 
-**Version**: 3.0 | **Status**: Active | **Language**: English
+**Version**: 3.4 | **Status**: Active | **Language**: English
 
 **Audience**: Developers using AI coding assistants, technical leads, engineering teams, DevOps engineers
 
@@ -30,7 +30,7 @@ Everything that can be validated, checked, or enforced without an LLM is handled
 
 Two layers of functionality:
 
-- **Core** — deterministic skill engine, universal workflows (generate/analyze/plan), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, execution plans for context-safe phased execution, and Cypilot DSL (CDSL) for behavioral specifications
+- **Core** — deterministic skill engine, universal workflows (generate/analyze/plan), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, execution plans for context-safe phased execution, [RalphEx](https://ralphex.com/) delegation for autonomous plan execution, environment diagnostics (`cpt doctor`), and Cypilot DSL (CDSL) for behavioral specifications
 - **[SDLC Kit](https://github.com/cyberfabric/cyber-pilot-kit-sdlc)** — artifact-first development pipeline (PRD → DESIGN → ADR → DECOMPOSITION → FEATURE → CODE) with templates, checklists, examples, deterministic validation, cross-artifact consistency checks, and GitHub PR review/status workflows
 
 Works with any language, stack, or repository.
@@ -63,6 +63,7 @@ Works with any language, stack, or repository.
     - [Quick Setup](#quick-setup)
     - [How It Works](#how-it-works)
     - [Cross-Repo Commands](#cross-repo-commands)
+  - [RalphEx Integration](#ralphex-integration)
   - [Extensibility](#extensibility)
     - [Kit: **Cypilot SDLC**](#kit-cypilot-sdlc)
   - [Contributing](#contributing)
@@ -131,12 +132,15 @@ The `generate-agents` command generates:
 - **Skill outputs** — agent skill definitions following the [Agent Skills specification](https://agentskills.io/specification)
 - **Subagents** — isolated agent definitions with scoped tools, model selection, and dedicated prompts (all tools except Windsurf)
 
-Two purpose-built subagents are generated for tools that support them:
+Five subagents are generated for tools that support them:
 
 | Subagent | Purpose | Write Access |
 |----------|---------|-------------|
-| `cypilot-codegen` | Code generation when requirements are fully specified — no back-and-forth, just implementation | Yes (full tools, worktree isolation on Claude Code) |
+| `cypilot-codegen` | Code generation when requirements are fully specified — no back-and-forth, just implementation | Yes (worktree isolation on Claude Code) |
 | `cypilot-pr-review` | Structured PR review in isolated context — keeps detailed analysis separate from main conversation | No (read-only) |
+| `cypilot-ralphex` | Delegates Cypilot plans to [RalphEx](https://ralphex.com/) for autonomous execution | Yes |
+| `cypilot-phase-compiler` | Compiles one plan phase from its brief in an isolated agent context | Yes (isolated) |
+| `cypilot-phase-runner` | Executes the next phase from a generated plan inside a dedicated agent context | Yes (isolated) |
 
 ### Update
 
@@ -249,10 +253,13 @@ Cypilot provides a unified **Agent Skill** (`cypilot`) defined in `skills/cypilo
 
 Subagents are defined once in `agents.toml` using semantic properties (`mode`, `isolation`, `model`) and automatically adapted to each tool's native format. One definition produces correct output for all supported tools — Claude Code is the canonical format (full fidelity), and other tools receive the best adaptation their format supports.
 
-Two purpose-built subagents are included:
+Five subagents are included:
 
 - **`cypilot-codegen`** — Takes fully-specified requirements and implements them without back-and-forth. Runs in an isolated worktree (on Claude Code) with full write access.
 - **`cypilot-pr-review`** — Performs structured, checklist-based PR reviews in a read-only isolated context, keeping detailed analysis separate from the main conversation.
+- **`cypilot-ralphex`** — Manages the full RalphEx delegation lifecycle: discovery → plan export → delegation → handoff reporting.
+- **`cypilot-phase-compiler`** — Compiles exactly one plan phase from its brief in an isolated agent context, without delegating to RalphEx or executing the phase.
+- **`cypilot-phase-runner`** — Executes the next phase from a generated plan inside a dedicated agent context, without RalphEx delegation.
 
 Generated automatically by `cypilot generate-agents --agent <name>`. Windsurf does not support subagents and is gracefully skipped.
 
@@ -270,15 +277,17 @@ See [ADR-0016](architecture/ADR/0016-cpt-cypilot-adr-ai-cli-extensibility-subage
 
 ### Workflow Commands
 
-Cypilot has exactly **three** universal workflows:
+Cypilot has **three** universal workflows plus delegation and diagnostics:
 
 | Command | Workflow | Description |
 |---------|----------|-------------|
 | `/cypilot-plan` | `plan.md` | Plan: decompose large tasks into self-contained phase files for phased execution |
 | `/cypilot-generate` | `generate.md` | Write: create, edit, fix, update, implement, refactor, configure |
 | `/cypilot-analyze` | `analyze.md` | Read: validate, review, check, inspect, audit, compare |
+| `cpt delegate` | — | Compile a Cypilot plan and delegate to [RalphEx](https://ralphex.com/) for autonomous execution |
+| `cpt doctor` | — | Run environment health checks (ralphex availability, etc.) |
 
-> **Routing priority**: plan > generate > analyze. "Plan to generate PRD" routes to `plan.md`, not `generate.md`.
+> **Routing priority**: delegate > plan > generate > analyze. Delegation intent routes to the `cypilot-ralphex` subagent. "Plan to generate PRD" routes to `plan.md`, not `generate.md`.
 
 > **Plan Escalation**: `generate.md` and `analyze.md` include a mandatory escalation gate — if the estimated context exceeds the safe budget (>2500 lines for generate, >2000 for analyze), the agent MUST offer to switch to `/cypilot-plan` for phased execution.
 
@@ -412,6 +421,41 @@ Missing source repos are handled gracefully — a warning is emitted and operati
 Cross-repo ID resolution is controlled by two traceability settings in the workspace config: `cross_repo` (enables workspace-aware path resolution) and `resolve_remote_ids` (expands remote IDs into the union set). Both default to `true`. Use `validate --local-only` to skip cross-repo resolution entirely.
 
 For the full specification, see [`requirements/workspace.md`](requirements/workspace.md).
+
+---
+
+## RalphEx Integration
+
+Cypilot integrates with [RalphEx](https://ralphex.com/) — an autonomous code execution platform. When RalphEx is available, Cypilot can delegate entire execution plans for autonomous processing.
+
+**How it works:**
+
+1. Create a plan with `/cypilot-plan` — produces `plan.toml` manifest + phase files
+2. Run `cpt delegate <plan_dir>` — compiles phases into RalphEx-compatible Markdown and invokes RalphEx
+
+```bash
+# Dry run — assemble the command without invoking
+cpt delegate .bootstrap/.plans/my-task --dry-run
+
+# Execute — delegate with dashboard
+cpt delegate .bootstrap/.plans/my-task --mode execute
+
+# Tasks only — export plan without running
+cpt delegate .bootstrap/.plans/my-task --mode tasks-only
+
+# Review mode — read-only analysis
+cpt delegate .bootstrap/.plans/my-task --mode review
+```
+
+**Environment check:**
+
+```bash
+cpt doctor    # checks ralphex availability, reports PASS/WARN/FAIL
+```
+
+RalphEx is optional — all Cypilot workflows work without it. When RalphEx is not installed, `cpt doctor` reports a WARN with installation guidance, and `cpt delegate` exits with a clear error and setup instructions.
+
+See [ADR-0018](architecture/ADR/0018-cpt-cypilot-adr-ralphx-delegation-skill-v1.md) for the architecture decision and design rationale.
 
 ---
 

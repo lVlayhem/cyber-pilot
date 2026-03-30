@@ -5,6 +5,7 @@
 - [CLI Entrypoint](#cli-entrypoint)
 - [Library Entrypoint](#library-entrypoint)
 - [Post-Run Handoff](#post-run-handoff)
+- [Response Completion Gate](#response-completion-gate)
 
 <!-- /toc -->
 
@@ -69,6 +70,16 @@ build command → track lifecycle. It returns a structured dict with keys:
 - `"delegated"` — command assembled and ready for invocation
 - `"error"` — a precondition failed; check the `error` field
 
+**Error handling:** When `result["status"] == "error"`, inspect `result["error"]`
+for the failure reason and `result["lifecycle_state"]` for the lifecycle position.
+Do NOT proceed to Post-Run Handoff. Instead:
+- If `result["bootstrap"]["needed"]` is `True`: inform the user that `ralphex --init`
+  is required and request explicit approval before running it.
+- If `result["error"]` references review precondition failure: report the
+  precondition (e.g. no commits ahead of default branch) and suggest resolution.
+- For all other errors: report the error message, the lifecycle state at failure,
+  and offer retry or abort options.
+
 **Mode selection:**
 
 | Mode | Command | Notes |
@@ -120,9 +131,28 @@ from cypilot.ralphex_export import (
 
 1. Call `read_handoff_status(exit_code, output_refs, partial)` to classify the delegation outcome (success/partial/failed).
 2. Call `check_completed_plans(plans_dir, task_slug)` to inspect the ralphex-managed `completed/` subdirectory for lifecycle artifacts.
-3. Call `run_validation_commands(commands, cwd=repo_root)` with the validation commands from the original Cypilot plan to verify execution correctness independently of ralphex. Pass the delegated repository root as `cwd` so repo-relative commands resolve correctly.
+3. Call `run_validation_commands(commands, cwd=repo_root)` with validation commands
+   extracted from the `## Validation Commands` section of the compiled plan file
+   (`result["plan_file"]`). Each non-empty, non-heading line in that section is one
+   command. Pass the delegated repository root as `cwd` so repo-relative commands
+   resolve correctly.
 4. Call `report_handoff(...)` to assemble the delegation summary.
-5. Return the handoff report to the main conversation with status, output refs, validation outcome, and next-step options.
+5. Return the handoff report to the main conversation using this structured format:
+
+```markdown
+## Delegation Handoff Report
+- **Status**: {report["status"]} (success | partial | failed)
+- **Plan file**: `{report["plan_file"]}`
+- **Mode**: {report["mode"]}
+- **Validation passed**: {report["validation_passed"]}
+- **Completed plan**: `{report["completed_plan_path"]}` or none
+- **Output refs**: {report["output_refs"] as bulleted list, or "none"}
+
+### Next Steps
+1. Review output artifacts listed above
+2. Run `/cypilot-analyze` on changed files if validation passed
+3. If failed: inspect error output, fix issues, and re-delegate
+```
 
 **Bootstrap gate:**
 
@@ -131,3 +161,16 @@ with `bootstrap.needed = True` and a message directing the user to run
 `ralphex --init`. If the user wants to proceed, request explicit approval before
 running `ralphex --init`. NEVER run `ralphex --init` automatically — it is
 always an opt-in action.
+
+## Response Completion Gate
+
+This agent's response is complete only when ALL of the following are true:
+- `run_delegation()` has been called and the result dict is available
+- If `status == "error"`: the error has been reported with lifecycle state,
+  failure reason, and recovery options (retry/abort/bootstrap)
+- If `status != "error"`: Post-Run Handoff steps 1–5 have been executed and
+  the structured Delegation Handoff Report has been emitted
+- The SKILL.md invariant has been satisfied (Cypilot mode was loaded)
+
+Do NOT end the response with only a summary or status update. The handoff
+report (or error report with recovery options) is the mandatory terminal block.

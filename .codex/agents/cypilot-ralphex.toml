@@ -1,5 +1,3 @@
-# Cypilot subagent definition for OpenAI Codex: cypilot-ralphex
-
 name = "cypilot-ralphex"
 description = "Cypilot ralphex delegation agent. Use when delegating a Cypilot plan to ralphex for autonomous execution. Manages discovery, export, delegation, and handoff lifecycle."
 developer_instructions = """

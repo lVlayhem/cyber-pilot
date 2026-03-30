@@ -5,6 +5,21 @@
 #
 # Semantic fields (mode, isolation, model) are mapped to per-tool
 # frontmatter by the agents command — kits never need tool-specific knowledge.
+#
+# Field mappings by tool:
+#
+#   isolation (bool):
+#     Claude Code  → true = worktree-isolated agent, false = main-context agent
+#     Cursor       → true = "agent" mode (background), false = inline composer
+#     Copilot      → true = separate workspace context, false = shared context
+#     Codex        → true = sandboxed execution, false = shared session
+#
+#   model (string):
+#     "inherit"    → all tools: use the model selected by the user/session
+#     "fast"       → Claude Code: maps to "sonnet"; Cursor: kept as "fast";
+#                    Copilot/Codex: maps to the tool's fast-tier model
+#     Prefer "inherit" unless the agent explicitly needs a cheaper/faster tier.
+#     Use "fast" only for high-volume, low-complexity tasks (e.g. PR review).
 
 [agents.cypilot-codegen]
 description = """\

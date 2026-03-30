@@ -381,32 +381,31 @@ _TOOL_AGENT_CONFIG: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _render_toml_agents(agents: List[Dict[str, Any]], target_agent_paths: Dict[str, str]) -> str:
-    """Render one OpenAI Codex TOML role-definition file per agent.
+def _render_toml_agent(agent: Dict[str, Any], target_agent_path: str) -> str:
+    """Render a single OpenAI Codex TOML agent role file.
 
-    Codex treats each ``.toml`` file in ``.codex/agents/`` as a single role
-    definition, so the generated file must expose top-level
-    ``description``/``developer_instructions`` keys rather than nested
-    ``[agents.*]`` tables.
-
-    *agents* must contain exactly one semantic agent dict and *target_agent_paths*
-    must contain its resolved prompt target.
+    Each agent becomes its own ``.toml`` file with top-level ``name``,
+    ``description``, and ``developer_instructions`` — the fields required
+    by the Codex CLI agent-role schema.
     """
-    if len(agents) != 1:
-        raise ValueError("_render_toml_agents() expects exactly one agent for Codex TOML output")
-    agent = agents[0]
     name = agent["name"]
-    desc = " ".join(agent.get("description", "").split())
-    agent_path = target_agent_paths.get(name, "")
-    prompt = f"ALWAYS open and follow `{agent_path}`"
+    raw_desc = agent.get("description", "")
+    if not isinstance(raw_desc, str):
+        raw_desc = str(raw_desc) if raw_desc is not None else ""
+    desc = " ".join(raw_desc.split())
     desc_escaped = desc.replace("\\", "\\\\").replace('"', '\\"')
-    lines: List[str] = [f"# Cypilot subagent definition for OpenAI Codex: {name}", ""]
-    lines.append(f'name = "{name}"')
-    lines.append(f'description = "{desc_escaped}"')
-    lines.append('developer_instructions = """')
-    lines.append(prompt)
-    lines.append('"""')
-    return "\n".join(lines).rstrip() + "\n"
+    prompt = f"ALWAYS open and follow `{target_agent_path}`"
+    lines: List[str] = [
+        f'name = "{name}"',
+        f'description = "{desc_escaped}"',
+        'developer_instructions = """',
+        prompt,
+        '"""',
+    ]
+    return "\n".join(lines) + "\n"
+
+
+
 # @cpt-end:cpt-cypilot-algo-agent-integration-generate-shims:p1:inst-create-proxy-templates
 
 
@@ -630,14 +629,62 @@ def _default_agents_config() -> dict:
                             "path": ".agents/skills/cypilot/SKILL.md",
                             "template": [
                                 "---",
-                                _TMPL_NAME,
+                                "name: cypilot",
                                 _TMPL_DESCRIPTION,
                                 "---",
                                 "",
                                 "{custom_content}",
                                 "ALWAYS open and follow `{target_skill_path}`",
                             ],
-                        }
+                        },
+                        {
+                            "path": ".agents/skills/cypilot-generate/SKILL.md",
+                            "target": "workflows/generate.md",
+                            "template": [
+                                "---",
+                                "name: cypilot-generate",
+                                _TMPL_DESCRIPTION,
+                                "---",
+                                "",
+                                _ALWAYS_FOLLOW_TARGET_PATH,
+                            ],
+                        },
+                        {
+                            "path": ".agents/skills/cypilot-analyze/SKILL.md",
+                            "target": "workflows/analyze.md",
+                            "template": [
+                                "---",
+                                "name: cypilot-analyze",
+                                _TMPL_DESCRIPTION,
+                                "---",
+                                "",
+                                _ALWAYS_FOLLOW_TARGET_PATH,
+                            ],
+                        },
+                        {
+                            "path": ".agents/skills/cypilot-plan/SKILL.md",
+                            "target": "workflows/plan.md",
+                            "template": [
+                                "---",
+                                "name: cypilot-plan",
+                                _TMPL_DESCRIPTION,
+                                "---",
+                                "",
+                                _ALWAYS_FOLLOW_TARGET_PATH,
+                            ],
+                        },
+                        {
+                            "path": ".agents/skills/cypilot-workspace/SKILL.md",
+                            "target": "workflows/workspace.md",
+                            "template": [
+                                "---",
+                                "name: cypilot-workspace",
+                                _TMPL_DESCRIPTION,
+                                "---",
+                                "",
+                                _ALWAYS_FOLLOW_TARGET_PATH,
+                            ],
+                        },
                     ],
                 },
             },
@@ -1255,50 +1302,36 @@ def _process_single_agent(
                 )
 
         if output_format == "toml":
-            filtered_kit_agents = [ka for ka in kit_agents if ka.get("prompt_file_abs")]
-
-            legacy_toml_path = (output_dir / "cypilot-agents.toml").resolve()
-            if legacy_toml_path.is_file():
-                if dry_run:
-                    subagents_result["deleted"].append(legacy_toml_path.as_posix())
-                    subagents_result["outputs"].append({
-                        "path": _safe_relpath(legacy_toml_path, project_root),
-                        "action": "deleted",
-                    })
-                else:
-                    try:
-                        legacy_toml_path.unlink()
-                        subagents_result["deleted"].append(legacy_toml_path.as_posix())
-                        subagents_result["outputs"].append({
-                            "path": _safe_relpath(legacy_toml_path, project_root),
-                            "action": "deleted",
-                        })
-                    except OSError:
-                        subagents_result["errors"].append(
-                            f"failed to delete legacy OpenAI agent config: {_safe_relpath(legacy_toml_path, project_root)}"
-                        )
-
-            for ka in filtered_kit_agents:
+            # Render one TOML file per agent (Codex CLI expects top-level fields per file)
+            for ka in kit_agents:
                 name = ka["name"]
-                target_agent_rel = target_agent_paths.get(name, "")
-                if not target_agent_rel:
+                agent_path = target_agent_paths.get(name, "")
+                if not agent_path:
                     sys.stderr.write(
                         f"WARNING: agent {name!r} has no resolved prompt target, skipping subagent proxy\n"
                     )
                     subagents_result["skipped"] = True
                     subagents_result["skip_reason"] = subagents_result.get("skip_reason", "") or "one or more agents missing prompt target"
                     continue
-                content = _render_toml_agents([ka], {name: target_agent_rel})
-                filename = filename_fmt.format(name=name)
-                out_path = (output_dir / filename).resolve()
+                toml_path = (output_dir / f"{name}.toml").resolve()
+                content = _render_toml_agent(ka, agent_path)
+                _write_or_skip(toml_path, content, subagents_result, project_root, dry_run)
+            # Clean up stale TOML files: legacy combined file and renamed/removed agents
+            desired_toml_names = {f"{ka['name']}.toml" for ka in kit_agents if target_agent_paths.get(ka["name"])}
+            if output_dir.is_dir():
                 try:
-                    out_path.relative_to(output_dir)
-                except ValueError:
-                    subagents_result["errors"].append(
-                        f"agent {name!r} would write outside {output_dir_rel}, skipped"
-                    )
-                    continue
-                _write_or_skip(out_path, content, subagents_result, project_root, dry_run)
+                    for toml_file in output_dir.glob("cypilot*.toml"):
+                        if toml_file.name in desired_toml_names:
+                            continue
+                        rel = _safe_relpath(toml_file, project_root)
+                        subagents_result["outputs"].append({"path": rel, "action": "deleted"})
+                        if not dry_run:
+                            try:
+                                toml_file.unlink()
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
         else:
             # Markdown + YAML frontmatter (claude, cursor, copilot)
             template_fn = tool_cfg.get("template_fn")
@@ -1806,6 +1839,8 @@ def _render_agent_file_actions(
         ui.file_action(path, "created")
     for path in sub.get("updated", []):
         ui.file_action(path, "updated")
+    for path in sub.get("deleted", []):
+        ui.file_action(path, "deleted")
     if sub.get("skipped") and sub.get("skip_reason"):
         ui.substep(f"subagents skipped: {sub.get('skip_reason')}")
 

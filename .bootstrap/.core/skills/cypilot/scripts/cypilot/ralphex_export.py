@@ -223,6 +223,8 @@ def _find_project_root(start_path: Path) -> Path:
     for parent in [resolved_start] + list(resolved_start.parents):
         if (parent / ".git").exists() or (parent / ".bootstrap").exists():
             return parent
+        if (parent / "cypilot").exists() or (parent / ".cypilot").exists() or (parent / ".cpt").exists():
+            return parent
     return resolved_start.parent
 
 
@@ -561,6 +563,13 @@ def check_review_precondition(default_branch: str = "main", repo_root: str | Non
 # ---------------------------------------------------------------------------
 
 
+def _classify_exit_status(exit_code: int, partial: bool) -> str:
+    """Return ``"success"``, ``"partial"``, or ``"failed"`` from *exit_code*."""
+    if exit_code == 0:
+        return "success"
+    return "partial" if partial else "failed"
+
+
 # @cpt-begin:inst-read-status
 def read_handoff_status(
     exit_code: int,
@@ -577,15 +586,8 @@ def read_handoff_status(
     Returns:
         Dict with keys ``status``, ``exit_code``, ``output_refs``.
     """
-    if exit_code == 0:
-        status = "success"
-    elif partial:
-        status = "partial"
-    else:
-        status = "failed"
-
     return {
-        "status": status,
+        "status": _classify_exit_status(exit_code, partial),
         "exit_code": exit_code,
         "output_refs": output_refs,
     }
@@ -610,7 +612,7 @@ def check_completed_plans(plans_dir: str, task_slug: str) -> dict:
     if not completed_dir.is_dir():
         return {"found": False, "completed_path": None, "artifacts": []}
 
-    artifacts = [f.name for f in completed_dir.iterdir() if f.is_file()]
+    artifacts = sorted(f.name for f in completed_dir.iterdir() if f.is_file())
     target = f"{task_slug}.md"
     found = target in artifacts
     completed_path = str(completed_dir / target) if found else None
@@ -718,15 +720,8 @@ def report_handoff(
     Returns:
         Dict summarizing the delegation outcome.
     """
-    if exit_code == 0:
-        status = "success"
-    elif partial:
-        status = "partial"
-    else:
-        status = "failed"
-
     return {
-        "status": status,
+        "status": _classify_exit_status(exit_code, partial),
         "plan_file": plan_file,
         "mode": mode,
         "exit_code": exit_code,
@@ -743,7 +738,7 @@ def report_handoff(
 
 # @cpt-begin:cpt-cypilot-state-ralphex-delegation-lifecycle:p1
 _VALID_TRANSITIONS: dict[str, list[str]] = {
-    "not_exported": ["exported"],      # inst-export
+    "not_exported": ["exported", "failed"],  # inst-export / inst-fail (review mode)
     "exported": ["delegated", "failed"],  # inst-delegate / inst-fail
     "delegated": ["completed", "failed"],  # inst-complete / inst-fail
     "failed": ["exported"],             # inst-re-export
@@ -960,33 +955,47 @@ def run_delegation(
             result["error"] = precondition["message"]
             return result
 
-    # 6. Compile plan
-    try:
-        plan_content = compile_delegation_plan(plan_dir)
-    except (FileNotFoundError, KeyError, ValueError, tomllib.TOMLDecodeError) as exc:
-        result["error"] = str(exc)
-        return result
+    # 6. Compile plan (skip for review-only — no compilable plan needed)
+    plan_content: Optional[str] = None
+    plan_file: Optional[str] = None
+    if mode != "review":
+        try:
+            plan_content = compile_delegation_plan(plan_dir)
+        except (FileNotFoundError, KeyError, ValueError, tomllib.TOMLDecodeError) as exc:
+            result["error"] = str(exc)
+            return result
 
-    # 7. Resolve plans dir and write
-    plans_dir = resolve_plans_dir(
-        repo_root,
-        override=plans_dir_override,
-    )
-    plan_path = Path(plans_dir)
-    plan_path.mkdir(parents=True, exist_ok=True)
+    # 7. Resolve plans dir and write (only when a plan was compiled)
+    if plan_content is not None:
+        plans_dir = resolve_plans_dir(
+            repo_root,
+            override=plans_dir_override,
+        )
+        plan_path = Path(plans_dir)
 
-    # Extract task name from compiled plan title (avoids re-reading plan.toml)
-    first_line = plan_content.split("\n", 1)[0]
-    task = first_line.removeprefix("# ").strip() or "delegation"
-    task_slug = re.sub(r"[^a-z0-9]+", "-", task.lower()).strip("-")
+        try:
+            plan_path.mkdir(parents=True, exist_ok=True)
 
-    plan_file = str(plan_path / f"{task_slug}.md")
-    Path(plan_file).write_text(plan_content, encoding="utf-8")
-    result["plan_file"] = plan_file
+            # Extract task name from compiled plan title (avoids re-reading plan.toml)
+            first_line = plan_content.split("\n", 1)[0]
+            task = first_line.removeprefix("# ").strip() or "delegation"
+            task_slug = re.sub(r"[^a-z0-9]+", "-", task.lower()).strip("-")
+            if not task_slug:
+                task_slug = "delegation"
 
-    lifecycle.export()
-    result["lifecycle_state"] = lifecycle.state
-    logger.info("Exported plan to %s", plan_file)
+            plan_file = str(plan_path / f"{task_slug}.md")
+            Path(plan_file).write_text(plan_content, encoding="utf-8")
+        except OSError as exc:
+            result["status"] = "error"
+            result["error"] = f"Failed to write plan to {plans_dir}: {exc}"
+            result["plan_file"] = None
+            return result
+
+        result["plan_file"] = plan_file
+
+        lifecycle.export()
+        result["lifecycle_state"] = lifecycle.state
+        logger.info("Exported plan to %s", plan_file)
 
     # 7b. Generate review artifacts when in review mode
     if mode == "review":
@@ -1000,12 +1009,11 @@ def run_delegation(
             )
         except OSError as exc:
             lifecycle.fail()
-            # Clean up exported plan file to keep disk state consistent
-            # with lifecycle_state="failed".
-            try:
-                Path(plan_file).unlink(missing_ok=True)
-            except OSError:
-                pass
+            if plan_file is not None:
+                try:
+                    Path(plan_file).unlink(missing_ok=True)
+                except OSError:
+                    pass
             result["plan_file"] = None
             result["status"] = "error"
             result["lifecycle_state"] = lifecycle.state
@@ -1203,8 +1211,10 @@ def _resolve_analyze_workflow_path(repo_root: Path) -> str:
 
 
 def _sync_review_override_prompts(repo_root: Path, analyze_workflow: str) -> list[Path]:
-    prompt_paths: list[Path] = []
     managed_block = _compose_managed_review_block(analyze_workflow)
+
+    # Phase 1: validate all prompts exist and collect updated contents
+    updates: list[tuple[Path, str]] = []
     for relative_path in REVIEW_PROMPT_RELATIVES:
         prompt_path = repo_root / relative_path
         if not prompt_path.is_file():
@@ -1213,12 +1223,26 @@ def _sync_review_override_prompts(repo_root: Path, analyze_workflow: str) -> lis
                 "Re-run `ralphex --init` in the repo root."
             )
         existing = prompt_path.read_text(encoding="utf-8")
-        prompt_path.write_text(
-            _upsert_managed_review_block(existing, managed_block),
-            encoding="utf-8",
-        )
-        prompt_paths.append(prompt_path)
-    return prompt_paths
+        updates.append((prompt_path, _upsert_managed_review_block(existing, managed_block)))
+
+    # Phase 2: write to temp files, then atomically replace originals
+    temp_files: list[Path] = []
+    try:
+        for prompt_path, content in updates:
+            tmp = prompt_path.with_suffix(prompt_path.suffix + ".tmp")
+            tmp.write_text(content, encoding="utf-8")
+            temp_files.append(tmp)
+        for (prompt_path, _content), tmp in zip(updates, temp_files):
+            tmp.replace(prompt_path)
+    except OSError:
+        for tmp in temp_files:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+    return [p for p, _ in updates]
 
 
 def _compose_managed_review_block(analyze_workflow: str) -> str:
@@ -1275,7 +1299,7 @@ def _read_plans_dir_from_config(config_path: Path) -> Optional[str]:
 
     for line in content.splitlines():
         stripped = line.strip()
-        if stripped.startswith("plans_dir"):
+        if re.match(r"plans_dir\b", stripped):
             # Parse: plans_dir = "value" or plans_dir = 'value' or plans_dir = value
             match = re.match(
                 r'plans_dir\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^#\s]+))',
@@ -1288,17 +1312,46 @@ def _read_plans_dir_from_config(config_path: Path) -> Optional[str]:
     return None
 
 
+def _extract_markdown_section_lines(content: str, section_name: str) -> list[str]:
+    target_heading = f"## {section_name}"
+    lines = content.splitlines()
+    section_lines: list[str] = []
+    in_section = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            if in_section:
+                break
+            if stripped == target_heading:
+                in_section = True
+            continue
+        if in_section:
+            section_lines.append(line)
+
+    return section_lines
+
+
+def _extract_fenced_toml_block(content: str) -> str:
+    # Only match a ```toml fence at the very start of the file (frontmatter).
+    stripped = content.lstrip("\ufeff")
+    m = re.match(r"\s*```toml[ \t]*\r?\n(.*?)```", stripped, re.DOTALL)
+    if not m:
+        return ""
+    return m.group(1)
+
+
 def _parse_toml_frontmatter(content: str) -> dict:
     """Extract and parse TOML frontmatter from a phase file.
 
     Expects the TOML to be enclosed in a ```toml ... ``` code fence at the
     start of the file.
     """
-    match = re.search(r"```toml\s*\n(.*?)```", content, re.DOTALL)
-    if not match:
+    toml_block = _extract_fenced_toml_block(content)
+    if not toml_block:
         return {}
     try:
-        return tomllib.loads(match.group(1))
+        return tomllib.loads(toml_block)
     except (tomllib.TOMLDecodeError, ValueError):
         logger.warning("Failed to parse TOML frontmatter")
         return {}
@@ -1311,29 +1364,18 @@ def _extract_section_items(content: str, section_name: str) -> list[str]:
     For 'Acceptance Criteria' sections, extracts checkbox items.
     Stops at the next ## heading or end of content.
     """
-    # Find section start
-    pattern = rf"^## {re.escape(section_name)}\s*$"
-    match = re.search(pattern, content, re.MULTILINE)
-    if not match:
-        return []
-
-    # Extract section body until next ## or end
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    section_body = rest[:next_section.start()] if next_section else rest
-
     items: list[str] = []
-    for line in section_body.splitlines():
+    numbered_item_re = re.compile(r"^\d+\.\s+[^\n]+$")
+    checkbox_item_re = re.compile(r"^-\s+\[[ xX]\]\s+[^\n]+$")
+
+    for line in _extract_markdown_section_lines(content, section_name):
         stripped = line.strip()
-        # Numbered list items: "1. Do something"
-        num_match = re.match(r"^\d+\.\s+(.+)$", stripped)
-        if num_match:
-            items.append(num_match.group(1).rstrip("."))
+        if numbered_item_re.fullmatch(stripped):
+            _, _, item = stripped.partition(".")
+            items.append(item.strip().rstrip("."))
             continue
-        # Checkbox items: "- [ ] Something" or "- [x] Something"
-        cb_match = re.match(r"^-\s+\[[ x]\]\s+(.+)$", stripped)
-        if cb_match:
-            items.append(cb_match.group(1))
+        if checkbox_item_re.fullmatch(stripped):
+            items.append(stripped.split("]", 1)[1].strip())
             continue
 
     return items
@@ -1345,16 +1387,7 @@ def _extract_section_body(content: str, section_name: str) -> str:
     Returns the normalized paragraph/list text between ``## {section_name}``
     and the next ``##`` heading, excluding empty lines.
     """
-    pattern = rf"^## {re.escape(section_name)}\s*$"
-    match = re.search(pattern, content, re.MULTILINE)
-    if not match:
-        return ""
-
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    section_body = rest[:next_section.start()] if next_section else rest
-
-    lines = [line.strip() for line in section_body.splitlines() if line.strip()]
+    lines = [line.strip() for line in _extract_markdown_section_lines(content, section_name) if line.strip()]
     return " ".join(lines)
 
 
@@ -1364,24 +1397,14 @@ def _distill_guidance(content: str) -> list[str]:
     Only includes items from Engineering and Quality subsections to keep
     the exported guidance bounded.
     """
-    # Find Rules section
-    match = re.search(r"^## Rules\s*$", content, re.MULTILINE)
-    if not match:
-        return []
-
-    rest = content[match.end():]
-    next_section = re.search(r"^## ", rest, re.MULTILINE)
-    rules_body = rest[:next_section.start()] if next_section else rest
-
     guidance: list[str] = []
     in_target_subsection = False
+    subsection_header_re = re.compile(r"^###\s+[^\n]+$")
 
-    for line in rules_body.splitlines():
+    for line in _extract_markdown_section_lines(content, "Rules"):
         stripped = line.strip()
-        # Check for subsection headers
-        subsection_match = re.match(r"^###\s+(.+)$", stripped)
-        if subsection_match:
-            subsection_name = subsection_match.group(1).strip()
+        if subsection_header_re.fullmatch(stripped):
+            subsection_name = stripped[4:].strip()
             in_target_subsection = subsection_name in _GUIDANCE_SUBSECTIONS
             continue
 

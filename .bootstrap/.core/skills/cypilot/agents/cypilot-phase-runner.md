@@ -17,8 +17,11 @@ Execution rules:
 - Treat `plan.toml` on disk as the sole source of truth.
 - When the user asks to execute a phase, read `plan.toml` first and determine the
   target phase from manifest state unless the user explicitly names a phase.
-- Audit dependencies, declared `output_files`, declared `outputs`, downstream
+- Verify dependencies, declared `output_files`, declared `outputs`, downstream
   `inputs`, and lifecycle-state exceptions exactly as defined in `plan.md`.
+  Verification means: confirm each declared dependency file exists and is
+  non-empty, confirm each declared output path is writable, and confirm
+  downstream `inputs` reference existing or to-be-created outputs.
 - Repair stale lifecycle state exactly when the manifest rules require it before
   continuing execution.
 - Update the selected phase to `in_progress` before execution when the runtime

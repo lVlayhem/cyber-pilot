@@ -20,7 +20,10 @@ from .utils import toml_utils
 
 logger = logging.getLogger(__name__)
 
-_VERSION_RE = re.compile(r"v?(\d+\.\d+(?:\.\d+)?)")
+_VERSION_RES = (
+    re.compile(r"^v?\d+\.\d+$"),
+    re.compile(r"^v?\d+\.\d+\.\d+$"),
+)
 
 # @cpt-begin:cpt-cypilot-algo-ralphex-delegation-validate:p1:inst-if-none
 INSTALL_GUIDANCE = (
@@ -30,6 +33,15 @@ INSTALL_GUIDANCE = (
     "  - Binary releases: https://github.com/cyberfabric/ralphex/releases"
 )
 # @cpt-end:cpt-cypilot-algo-ralphex-delegation-validate:p1:inst-if-none
+
+
+def _extract_version(output: str) -> Optional[str]:
+    for raw_token in output.split():
+        token = raw_token.strip(" \t\r\n,;:()[]{}<>'\"")
+        for pattern in _VERSION_RES:
+            if pattern.fullmatch(token):
+                return token[1:] if token.startswith("v") else token
+    return None
 
 
 def discover(config: dict) -> Optional[str]:
@@ -123,8 +135,7 @@ def validate(ralphex_path: Optional[str]) -> Dict[str, object]:
 
     # @cpt-begin:cpt-cypilot-algo-ralphex-delegation-validate:p1:inst-parse-version
     output = proc.stdout.strip() or proc.stderr.strip()
-    match = _VERSION_RE.search(output)
-    version = match.group(1) if match else None
+    version = _extract_version(output)
     # @cpt-end:cpt-cypilot-algo-ralphex-delegation-validate:p1:inst-parse-version
 
     # @cpt-begin:cpt-cypilot-algo-ralphex-delegation-validate:p1:inst-return-available

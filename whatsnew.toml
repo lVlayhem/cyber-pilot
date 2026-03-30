@@ -207,3 +207,17 @@ details = """\
 - **New bug-finding methodologies** — added compact high-recall `requirements/bug-finding.md` for source-code review and `requirements/prompt-bug-finding.md` for prompt/instruction review, with workflow integration for bounded, evidence-driven analysis
 - **Workflow and prompt-quality tightening** — `SKILL.md`, `workflows/analyze.md`, `workflows/generate.md`, and `workflows/plan.md` now better enforce task-matched dependency loading, compact prompt context, and terminal response-completion gates to avoid premature completion
 """
+
+["v3.4.0-beta"]
+summary = "RalphEx delegation, native phase agents, plan brief-first flow"
+details = """\
+- **`cpt delegate <plan_dir>`** — new command: compiles a Cypilot plan into ralphex-compatible format and delegates execution (modes: execute, tasks-only, review)
+- **`cpt doctor`** — new command: environment health check with PASS/WARN/FAIL results (currently checks ralphex availability)
+- **Native phase agents** — new `cypilot-phase-compiler` and `cypilot-phase-runner` subagents for plan-phase compilation and execution without ralphex
+- **Plan workflow: brief-first flow** — plan generation now pauses after manifest + briefs with a 4-way choice: compile inline, emit per-brief prompts, run phase-compiler subagents, or stop
+- **Fix: Codex agent generation (#125)** — `cpt generate-agents` now creates one `.toml` per agent (was single combined file causing Codex CLI warnings) and generates all 5 skill entries (was 1)
+- **Fix: workspace git timeouts** — default timeout increased from 120s to 300s; new `GIT_TIMEOUT` env var for slow networks
+- **Fix: zip-slip in kit download** — tarfile extraction now validates member paths against directory traversal before extracting
+- **Fix: silent error swallowing** — ~15 broad `except Exception` handlers replaced with specific types so unexpected errors surface instead of being hidden
+- **Configuration guide** — new `guides/CONFIGURATION.md` covering core.toml, artifacts.toml, rules, WHEN-rules, and traceability\
+"""
