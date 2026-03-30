@@ -7,17 +7,20 @@ workspace config) and the standalone `cpt check-language` command.
 Language policy is configured via a list of language codes such as ["en"] or
 ["en", "ru"].  Each code maps to one or more Unicode block ranges; characters
 outside all allowed ranges are flagged as violations.
-"""
 
+@cpt-algo:cpt-cypilot-algo-traceability-validation-lang-scan:p1
+"""
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-lang-scan-imports
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-lang-scan-imports
 
 # ---------------------------------------------------------------------------
 # Unicode script ranges — maps language code → list of (start, end) inclusive
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-script-ranges
 SCRIPT_RANGES: Dict[str, List[Tuple[int, int]]] = {
     # Latin (Basic + Extended + Supplement) — always required for English
     "en": [
@@ -97,22 +100,27 @@ SCRIPT_RANGES: Dict[str, List[Tuple[int, int]]] = {
         (0xFB13, 0xFB17),   # Armenian Ligatures
     ],
 }
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-script-ranges
 
 # Language codes that are recognized by this module.
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-supported-langs
 SUPPORTED_LANGUAGES: List[str] = sorted(SCRIPT_RANGES.keys())
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-supported-langs
 
 # Always-allowed: emoji and zero-width / directional markers that are
 # language-neutral and widely used in Markdown.
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-common-ranges
 _COMMON_RANGES: List[Tuple[int, int]] = [
     (0x1F300, 0x1F9FF),  # Emoji (common in Markdown ✅ 🔥)
     (0x200B, 0x200F),    # Zero-width / directional markers
     (0xFEFF, 0xFEFF),    # BOM
 ]
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-common-ranges
 
 # ---------------------------------------------------------------------------
 # Structural line filters — these lines are always skipped to reduce noise
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-skip-patterns
 # Fenced code blocks: lines between ``` or ~~~ are skipped entirely.
 _FENCE_START: re.Pattern = re.compile(r"^\s*(`{3,}|~{3,})")
 
@@ -122,11 +130,12 @@ _SKIP_LINE_PATTERNS: List[re.Pattern] = [
     re.compile(r"^\s*\|.*`cpt-.*`"),    # Traceability ID table rows
     re.compile(r"^\s*@cpt"),            # Cypilot markers (@cpt-begin, etc.)
 ]
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-skip-patterns
 
 # ---------------------------------------------------------------------------
 # Violation
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-violation-datamodel
 
 class LangScanError(Exception):
     """Raised when a file cannot be read for language scanning."""
@@ -155,10 +164,12 @@ class LangViolation:
         s = self.line.strip()
         return s[:limit] + ("…" if len(s) > limit else "")
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-violation-datamodel
+
 # ---------------------------------------------------------------------------
 # Range helpers
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-range-helpers
 
 def build_allowed_ranges(languages: List[str]) -> List[Tuple[int, int]]:
     """Merge Unicode ranges for all given language codes into a sorted list.
@@ -186,10 +197,12 @@ def is_allowed(cp: int, ranges: List[Tuple[int, int]]) -> bool:
             lo = mid + 1
     return False
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-range-helpers
+
 # ---------------------------------------------------------------------------
 # Scanning
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-file
 
 def scan_file(
     path: Path,
@@ -232,7 +245,9 @@ def scan_file(
 
     return violations
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-file
 
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-paths
 def scan_paths(
     roots: List[Path],
     allowed_ranges: List[Tuple[int, int]],
@@ -258,6 +273,8 @@ def scan_paths(
                     all_violations.extend(scan_file(file_path, allowed_ranges))
 
     return all_violations
+
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-paths
 
 
 __all__ = [

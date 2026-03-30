@@ -1,13 +1,18 @@
-"""check-language command — scan Markdown artifacts for disallowed Unicode scripts."""
+"""check-language command — scan Markdown artifacts for disallowed Unicode scripts.
 
+@cpt-algo:cpt-cypilot-flow-traceability-validation-check-language:p1
+"""
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-check-lang-imports
 import argparse
 from pathlib import Path
 from typing import List
 
 from ..utils import error_codes as EC
 from ..utils.ui import ui
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-check-lang-imports
 
 
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-cmd-check-language
 def cmd_check_language(argv: List[str]) -> int:
     """Scan Markdown files for characters outside the allowed language set.
 
@@ -134,10 +139,13 @@ def cmd_check_language(argv: List[str]) -> int:
     ui.result(result, human_fn=lambda d: _human_result(d, quiet=args.quiet))
     return 2
 
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-cmd-check-language
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-helpers
 
 def _read_config_languages() -> List[str]:
     """Read allowed_content_languages from workspace config; fall back to ['en'].
@@ -183,10 +191,13 @@ def _count_md_files(roots: List[Path]) -> int:
             count += sum(1 for _ in root.rglob("*.md"))
     return count
 
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-helpers
+
 
 # ---------------------------------------------------------------------------
 # Human formatter
 # ---------------------------------------------------------------------------
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-human-result
 
 def _human_result(data: dict, quiet: bool = False) -> None:
     status = data.get("status", "")
@@ -232,3 +243,5 @@ def _human_result(data: dict, quiet: bool = False) -> None:
         "  allowed_content_languages = [\"en\", \"ru\"]"
     )
     ui.blank()
+
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-human-result
