@@ -230,3 +230,10 @@ details = """\
 - **Fix: backup preserved on preservation failure** — `chunk-input` now keeps the backup directory when file preservation fails, preventing user data loss
 - **Project-level extensibility** — manifest v2 with multi-layer pipeline enables project-level customization of agents, skills, and workflows through layered configuration\
 """
+
+["v3.5.1-beta"]
+summary = "RalphEx version discovery fix"
+details = """\
+- **Fix: ralphex version discovery** — version regex now accepts semver build metadata suffixes (e.g. `v0.26.2-7a637fa-20260331T171815`), fixing false "incompatible" reports for valid binaries
+- **Fix: ralphex URL references** — updated all ralphex URLs from cyberfabric to umputun
+"""
