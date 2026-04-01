@@ -108,6 +108,14 @@ class TestValidate:
             result = validate("/usr/local/bin/ralphex")
         assert result["version"] == "1.2.0"
 
+    def test_available_with_build_metadata_version(self):
+        """validate() parses version with build metadata suffix (e.g. ralphex v0.26.2-7a637fa-20260331T171815)."""
+        proc = MagicMock(returncode=0, stdout="ralphex v0.26.2-7a637fa-20260331T171815\n", stderr="")
+        with patch("cypilot.ralphex_discover.subprocess.run", return_value=proc):
+            result = validate("/usr/local/bin/ralphex")
+        assert result["status"] == "available"
+        assert result["version"] == "0.26.2-7a637fa-20260331T171815"
+
     def test_install_guidance_content(self):
         """Installation guidance includes platform-appropriate options."""
         assert "brew" in INSTALL_GUIDANCE.lower()
