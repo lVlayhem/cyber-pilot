@@ -19,6 +19,8 @@ Cypilot is a **deterministic agent tool** that embeds into AI coding assistants 
 
 Everything that can be validated, checked, or enforced without an LLM is handled by **deterministic scripts**; the LLM is reserved only for tasks that require reasoning, creativity, or natural language understanding.
 
+> **Convention**: 💬 = paste into AI agent chat. 🖥️ = run in terminal.
+
 ## Problem
 
 - **AI Agent Non-Determinism** — AI agents produce inconsistent results without structured guardrails; deterministic validation catches structural and traceability issues that LLMs miss or hallucinate
@@ -31,7 +33,7 @@ Everything that can be validated, checked, or enforced without an LLM is handled
 
 Two layers of functionality:
 
-- **Core** — deterministic skill engine, universal workflows (generate/analyze/plan), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, execution plans for context-safe phased execution, [RalphEx](https://ralphex.com/) delegation for autonomous plan execution, environment diagnostics (`cpt doctor`), and Cypilot DSL (CDSL) for behavioral specifications
+- **Core** — deterministic skill engine, universal workflows (generate/analyze/plan), multi-agent integrations (Windsurf, Cursor, Claude, Copilot, OpenAI), global CLI (`cypilot`/`cpt`), config directory management, extensible kit system, ID/traceability infrastructure, execution plans for context-safe phased execution, [RalphEx](https://ralphex.com/) delegation through the dedicated `cypilot-ralphex` capability skill/subagent, environment diagnostics (`cpt doctor`), and Cypilot DSL (CDSL) for behavioral specifications
 - **[SDLC Kit](https://github.com/cyberfabric/cyber-pilot-kit-sdlc)** — artifact-first development pipeline (PRD → DESIGN → ADR → DECOMPOSITION → FEATURE → CODE) with templates, checklists, examples, deterministic validation, cross-artifact consistency checks, and GitHub PR review/status workflows
 
 Works with any language, stack, or repository.
@@ -110,14 +112,11 @@ source ~/.zshrc
 
 ## Project Setup
 
+🖥️ **Terminal**:
+
 ```bash
-# Initialize Cypilot in your project
 cpt init
-
-# Generate agent entry points for your IDE
 cpt generate-agents --agent claude
-
-# Generate all agents for your IDE
 cpt generate-agents
 ```
 
@@ -148,7 +147,7 @@ Five subagents are generated for tools that support them:
 |----------|---------|-------------|
 | `cypilot-codegen` | Code generation when requirements are fully specified — no back-and-forth, just implementation | Yes (worktree isolation on Claude Code) |
 | `cypilot-pr-review` | Structured PR review in isolated context — keeps detailed analysis separate from main conversation | No (read-only) |
-| `cypilot-ralphex` | Delegates Cypilot plans to [RalphEx](https://ralphex.com/) for autonomous execution | Yes |
+| `cypilot-ralphex` | The required delegation interface for [RalphEx](https://ralphex.com/) — handles discovery, export, delegation, and handoff reporting | Yes |
 | `cypilot-phase-compiler` | Compiles one plan phase from its brief in an isolated agent context | Yes (isolated) |
 | `cypilot-phase-runner` | Executes the next phase from a generated plan inside a dedicated agent context | Yes (isolated) |
 
@@ -188,66 +187,52 @@ For the full configuration guide — including how to customize agent behavior, 
 
 Start requests with `cypilot` in your AI agent chat. This switches the agent into Cypilot mode: it loads config and rules, routes the request to the right workflow (plan vs generate vs analyze), and gates file writes behind explicit confirmation.
 
-```
-cypilot on            — enable Cypilot mode
-cypilot off           — disable Cypilot mode
-cypilot auto-config   — scan project and generate convention rules
-```
+- 💬 `cypilot on` — enable Cypilot mode
+- 💬 `cypilot off` — disable Cypilot mode
+- 💬 `cypilot auto-config` — scan the project and generate convention rules
 
 A full walkthrough is available in [`guides/STORY.md`](guides/STORY.md).
 
 ### Example Prompts
 
-**Setup & Configuration**
+#### Setup & Configuration
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot init` | Initializes Cypilot — creates config directory, generates rules, injects root AGENTS.md |
-| `cypilot auto-config` | Scans project structure and generates per-system convention rules |
-| `cypilot show config` | Displays config structure, registered artifacts, and codebase mappings |
-| `cypilot generate-agents --agent claude` | Regenerates agent entry points for a specific agent |
+- 💬 `cypilot init` — initialize Cypilot, create config, and inject the managed root `AGENTS.md` block
+- 💬 `cypilot auto-config` — scan project structure and generate per-system convention rules
+- 💬 `cypilot show config` — display config structure, registered artifacts, and codebase mappings
+- 💬 `cypilot generate-agents --agent claude` — regenerate agent entry points for a specific agent
 
-**Artifact Generation**
+#### Artifact Generation
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot make PRD for user authentication system` | Generates PRD with actors, requirements, flows following the template |
-| `cypilot make DESIGN from PRD.md` | Transforms PRD into architecture design with full traceability |
-| `cypilot decompose auth feature into tasks` | Creates DECOMPOSITION with ordered, dependency-mapped implementation units |
-| `cypilot make FEATURE for login flow` | Produces feature design with acceptance criteria, CDSL flows, edge cases |
+- 💬 `cypilot make PRD for user authentication system` — generate a PRD with actors, requirements, and flows
+- 💬 `cypilot make DESIGN from PRD.md` — transform a PRD into an architecture design with traceability
+- 💬 `cypilot decompose auth feature into tasks` — create a DECOMPOSITION with ordered, dependency-mapped units
+- 💬 `cypilot make FEATURE for login flow` — produce a FEATURE with acceptance criteria, CDSL flows, and edge cases
 
-**Execution Plans (phased execution)**
+#### Execution Plans
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot plan generate PRD for task manager` | Decomposes PRD generation into self-contained phase files (≤500 lines each) |
-| `cypilot plan analyze DESIGN` | Creates phased analysis plan with focused checklist groups per phase |
-| `cypilot execute next phase` | Reads next phase file, follows compiled instructions, reports against acceptance criteria |
-| `cypilot plan status` | Reports plan progress: completed/pending/failed phases, next actionable phase |
+- 💬 `cypilot plan generate PRD for task manager` — decompose PRD generation into self-contained phase files
+- 💬 `cypilot plan analyze DESIGN` — create a phased analysis plan with focused checklist groups
+- 💬 `cypilot execute next phase` — read the next phase file, follow compiled instructions, and report progress
+- 💬 `cypilot plan status` — report completed, pending, and failed phases plus the next actionable phase
 
-**Validation & Quality**
+#### Validation & Quality
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot validate PRD.md` | Runs deterministic template validation + semantic quality scoring |
-| `cypilot validate all` | Validates entire artifact hierarchy, checks cross-references, reports issues |
-| `cypilot validate code for auth module` | Scans code for `@cpt-*` markers, verifies coverage against feature docs |
-| `cypilot review DESIGN.md with consistency-checklist` | Multi-phase consistency analysis detecting contradictions |
+- 💬 `cypilot validate PRD.md` — run deterministic template validation and semantic quality scoring
+- 💬 `cypilot validate all` — validate the artifact hierarchy, cross-references, and issue states
+- 💬 `cypilot validate code for auth module` — scan code for `@cpt-*` markers and verify coverage
+- 💬 `cypilot review DESIGN.md with consistency-checklist` — run multi-phase consistency analysis
 
-**Traceability & Search**
+#### Traceability & Search
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot find requirements related to authentication` | Searches artifacts for IDs matching pattern, returns definitions and references |
-| `cypilot trace cpt-myapp-fr-auth` | Traces requirement through DESIGN → FEATURE → code |
-| `cypilot list unimplemented features` | Cross-references feature docs with code markers |
+- 💬 `cypilot find requirements related to authentication` — search artifacts for matching IDs, definitions, and references
+- 💬 `cypilot trace cpt-myapp-fr-auth` — trace a requirement through DESIGN, FEATURE, and code
+- 💬 `cypilot list unimplemented features` — cross-reference feature docs with code markers
 
-**Code Review & Pull Requests**
+#### Code Review & Pull Requests
 
-| Prompt | What the agent does |
-|--------|---------------------|
-| `cypilot review PR #123` | Fetches PR diff, analyzes against checklists, produces structured review report |
-| `cypilot PR status #123` | Assesses unreplied comments by severity, audits resolved comments, reports CI status |
+- 💬 `cypilot review PR #123` — fetch the PR diff and produce a structured checklist-based review
+- 💬 `cypilot PR status #123` — assess unreplied comments by severity, audit resolved comments, and report CI status
 
 ### Agent Skill
 
@@ -267,7 +252,7 @@ Five subagents are included:
 
 - **`cypilot-codegen`** — Takes fully-specified requirements and implements them without back-and-forth. Runs in an isolated worktree (on Claude Code) with full write access.
 - **`cypilot-pr-review`** — Performs structured, checklist-based PR reviews in a read-only isolated context, keeping detailed analysis separate from the main conversation.
-- **`cypilot-ralphex`** — Manages the full RalphEx delegation lifecycle: discovery → plan export → delegation → handoff reporting.
+- **`cypilot-ralphex`** — The canonical way to use RalphEx from Cypilot. It manages the full delegation lifecycle: discovery → plan export → delegation → handoff reporting.
 - **`cypilot-phase-compiler`** — Compiles exactly one plan phase from its brief in an isolated agent context, without delegating to RalphEx or executing the phase.
 - **`cypilot-phase-runner`** — Executes the next phase from a generated plan inside a dedicated agent context, without RalphEx delegation.
 
@@ -289,13 +274,13 @@ See [ADR-0016](architecture/ADR/0016-cpt-cypilot-adr-ai-cli-extensibility-subage
 
 Cypilot has **three** universal workflows plus delegation and diagnostics:
 
-| Command | Workflow | Description |
-|---------|----------|-------------|
-| `/cypilot-plan` | `plan.md` | Plan: decompose large tasks into self-contained phase files for phased execution |
-| `/cypilot-generate` | `generate.md` | Write: create, edit, fix, update, implement, refactor, configure |
-| `/cypilot-analyze` | `analyze.md` | Read: validate, review, check, inspect, audit, compare |
-| `cpt delegate` | — | Compile a Cypilot plan and delegate to [RalphEx](https://ralphex.com/) for autonomous execution |
-| `cpt doctor` | — | Run environment health checks (ralphex availability, etc.) |
+- 💬 `/cypilot-plan` — `plan.md`: decompose large tasks into self-contained phase files for phased execution
+- 💬 `/cypilot-generate` — `generate.md`: create, edit, fix, update, implement, refactor, or configure
+- 💬 `/cypilot-analyze` — `analyze.md`: validate, review, check, inspect, audit, or compare
+- � `cypilot delegate to ralphex` — route delegation to the dedicated `cypilot-ralphex` skill/subagent
+- 🖥️ `cpt doctor` — run environment health checks such as RalphEx availability
+
+> **Delegation rule**: use the `cypilot-ralphex` skill/subagent path for RalphEx delegation. Do not present `cpt delegate` as the primary user-facing workflow entry.
 
 > **Routing priority**: delegate > plan > generate > analyze. Delegation intent routes to the `cypilot-ralphex` subagent. "Plan to generate PRD" routes to `plan.md`, not `generate.md`.
 
@@ -438,22 +423,25 @@ For the full specification, see [`requirements/workspace.md`](requirements/works
 
 Cypilot integrates with [RalphEx](https://ralphex.com/) — an autonomous code execution platform. When RalphEx is available, Cypilot can delegate entire execution plans for autonomous processing.
 
-**How it works:**
+**Recommended flow:**
 
 1. Create a plan with `/cypilot-plan` — produces `plan.toml` manifest + phase files
-2. Run `cpt delegate <plan_dir>` — compiles phases into RalphEx-compatible Markdown and invokes RalphEx
+2. Ask Cypilot to delegate through the dedicated capability skill/subagent
+
+- 💬 `cypilot delegate to ralphex`
+- 💬 `cypilot delegate this plan to ralphex`
+- 💬 `cypilot use cypilot-ralphex for this plan`
+
+The `cypilot-ralphex` skill/subagent is the canonical delegation interface. It owns plan export, delegation, and handoff reporting.
+
+**CLI note for advanced/manual use:**
+
+`cpt delegate` is the underlying CLI mechanism used by the delegation flow. Document it as an implementation detail or advanced/manual path, not as the primary end-user entrypoint.
 
 ```bash
-# Dry run — assemble the command without invoking
 cpt delegate .bootstrap/.plans/my-task --dry-run
-
-# Execute — delegate with dashboard
 cpt delegate .bootstrap/.plans/my-task --mode execute
-
-# Tasks only — export plan without running
 cpt delegate .bootstrap/.plans/my-task --mode tasks-only
-
-# Review mode — read-only analysis
 cpt delegate .bootstrap/.plans/my-task --mode review
 ```
 
@@ -463,7 +451,7 @@ cpt delegate .bootstrap/.plans/my-task --mode review
 cpt doctor    # checks ralphex availability, reports PASS/WARN/FAIL
 ```
 
-RalphEx is optional — all Cypilot workflows work without it. When RalphEx is not installed, `cpt doctor` reports a WARN with installation guidance, and `cpt delegate` exits with a clear error and setup instructions.
+RalphEx is optional — all Cypilot workflows work without it. When RalphEx is not installed, `cpt doctor` reports a WARN with installation guidance, and the delegation flow via `cypilot-ralphex` reports a clear setup failure/handoff outcome.
 
 See [ADR-0018](architecture/ADR/0018-cpt-cypilot-adr-ralphx-delegation-skill-v1.md) for the architecture decision and design rationale.
 
