@@ -623,17 +623,17 @@ class TestProcessSingleAgentEdgeCases(unittest.TestCase):
             "---\nname: cypilot\ndescription: Test skill\n---\nContent\n",
             encoding="utf-8",
         )
-        # Create .gen/kits/sdlc/SKILL.md with description for kit enrichment (lines 805, 808-815)
-        kit_skill = cpt / ".gen" / "kits" / "sdlc" / "SKILL.md"
+        # Create config/kits/sdlc/SKILL.md — the path _process_single_agent reads for enrichment
+        kit_skill = cpt / "config" / "kits" / "sdlc" / "SKILL.md"
         kit_skill.parent.mkdir(parents=True)
         kit_skill.write_text(
-            "---\nname: sdlc-skill\ndescription: SDLC workflow kit\n---\nKit content\n",
+            "---\nname: sdlc-skill\ndescription: SDLC-ENRICHMENT-SENTINEL\n---\nKit content\n",
             encoding="utf-8",
         )
         return root, cpt
 
     def test_kit_description_enrichment(self):
-        """Skill description is enriched with kit descriptions (lines 805, 808-815)."""
+        """Skill description is enriched with kit descriptions from config/kits/*/SKILL.md."""
         from cypilot.commands.agents import _process_single_agent, _default_agents_config
 
         with TemporaryDirectory() as td:
@@ -645,7 +645,9 @@ class TestProcessSingleAgentEdgeCases(unittest.TestCase):
             agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
             self.assertTrue(agents_skill.exists(), f"Expected {agents_skill} to exist")
             content = agents_skill.read_text(encoding="utf-8")
-            self.assertIn("SKILL.md", content)
+            # The kit description from config/kits/sdlc/SKILL.md must appear in the output,
+            # proving the enrichment branch in _process_single_agent() ran.
+            self.assertIn("SDLC-ENRICHMENT-SENTINEL", content, "Kit description enrichment must be present")
 
     def test_non_dict_output_cfg_skipped(self):
         """Non-dict entries in outputs list are skipped (line 614)."""
@@ -2307,15 +2309,23 @@ class TestIsPureCypilotGeneratedV2(unittest.TestCase):
     def test_pure_generated_with_frontmatter(self):
         from cypilot.commands.agents import _is_pure_cypilot_generated
 
+        # Canonical frontmatter (only name + description) → pure
+        content = "---\nname: test\ndescription: A skill\n---\nALWAYS open and follow `{cypilot_path}/test.md`\n"
+        result = _is_pure_cypilot_generated(content)
+        self.assertTrue(result)
+
+    def test_custom_frontmatter_key_not_pure(self):
+        from cypilot.commands.agents import _is_pure_cypilot_generated
+
+        # Non-canonical key (type) means user-customised frontmatter → not pure
         content = "---\ntype: command\n---\nALWAYS open and follow `{cypilot_path}/test.md`\n"
         result = _is_pure_cypilot_generated(content)
-        # Should be true if only frontmatter + follow link
-        self.assertTrue(result)
+        self.assertFalse(result)
 
     def test_with_user_content_not_pure(self):
         from cypilot.commands.agents import _is_pure_cypilot_generated
 
-        content = "---\ntype: command\n---\nALWAYS open and follow `{cypilot_path}/test.md`\n\nUser added content here\n"
+        content = "---\nname: test\ndescription: A skill\n---\nALWAYS open and follow `{cypilot_path}/test.md`\n\nUser added content here\n"
         result = _is_pure_cypilot_generated(content)
         self.assertFalse(result)
 

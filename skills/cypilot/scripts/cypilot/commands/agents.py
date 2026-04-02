@@ -66,21 +66,49 @@ def _extract_cypilot_follow_target(content: str) -> Optional[str]:
     return None
 
 
-def _is_pure_cypilot_generated(content: str) -> bool:
+def _is_pure_cypilot_generated(
+    content: str,
+    *,
+    expected_name: Optional[str] = None,
+    expected_description: Optional[str] = None,
+) -> bool:
     """Return True only if *content* is a pure Cypilot-generated stub with no user content.
 
     A pure generated file consists of optional YAML frontmatter, optional
     blank lines, and the ``ALWAYS open and follow`` directive — nothing else.
     Files that contain a Cypilot follow-link *plus* additional user-authored
     content are **not** considered pure generated and must be preserved.
+
+    Frontmatter is compared against the canonical generated shape: Cypilot
+    stubs only ever write ``name`` and ``description``.  Any extra key
+    indicates user customisation, so the file is not treated as pure.
+    When *expected_name* or *expected_description* are provided the corresponding
+    frontmatter values must match exactly; a mismatch means the user edited them.
     """
     if not _extract_cypilot_follow_target(content):
         return False
-    # Strip optional YAML frontmatter
+    # Extract and validate YAML frontmatter when present
     stripped = content
     if stripped.startswith("---"):
         end = stripped.find("\n---", 3)
         if end != -1:
+            fm_block = stripped[3:end]
+            fm: Dict[str, str] = {}
+            for line in fm_block.splitlines():
+                if ":" in line:
+                    key, _, val = line.partition(":")
+                    key = key.strip()
+                    if key:
+                        fm[key] = _strip_wrapping_yaml_quotes(val.strip())
+            # Canonical generated frontmatter only uses name and description.
+            # Any extra key means the frontmatter was customised by the user.
+            if not set(fm.keys()).issubset({"name", "description"}):
+                return False
+            # Check that the caller-supplied expected values match the file.
+            if expected_name is not None and fm.get("name") != expected_name:
+                return False
+            if expected_description is not None and fm.get("description") != expected_description:
+                return False
             stripped = stripped[end + 4:]  # skip past closing ---
     # Remove all follow-link lines
     lines = [
@@ -1595,11 +1623,13 @@ def _process_single_agent(
                     content = legacy_file.read_text(encoding="utf-8")
                 except OSError:
                     continue
-                # Only delete if provably Cypilot-generated (no user content) and targeting a workflow
+                # Only delete if provably Cypilot-generated (no user content) and targeting THIS workflow
                 follow_target = _extract_cypilot_follow_target(content)
                 if not follow_target or "workflows/" not in follow_target:
                     continue
-                if not _is_pure_cypilot_generated(content):
+                if Path(follow_target).name != wf_filename:
+                    continue
+                if not _is_pure_cypilot_generated(content, expected_name=cmd_name):
                     continue
                 if not dry_run:
                     try:
@@ -1620,7 +1650,10 @@ def _process_single_agent(
         except OSError:
             continue
         # Only delete if provably Cypilot-generated (no user content beyond the stub).
-        if not _is_pure_cypilot_generated(content):
+        # Derive the canonical skill name: parent dir for SKILL.md, stem otherwise.
+        _lp = Path(legacy_rel)
+        _legacy_skill_name = _lp.parent.name if _lp.name == "SKILL.md" else _lp.stem
+        if not _is_pure_cypilot_generated(content, expected_name=_legacy_skill_name):
             continue
         rel_path = legacy_rel
         if not dry_run:
@@ -2202,9 +2235,10 @@ def cmd_generate_agents(argv: List[str]) -> int:
             # Also preview legacy workflow outputs from _process_single_agent
             lp = _process_single_agent(target, project_root, cypilot_root, cfg, cfg_path, dry_run=True)
             legacy_preview[target] = lp
-            wf = lp.get("workflows", {})
-            preview_v2_create += len(wf.get("created", []))
-            preview_v2_update += len(wf.get("updated", [])) + len(wf.get("renamed", []))
+            for section in ("workflows", "skills", "subagents"):
+                sec = lp.get(section, {})
+                preview_v2_create += len(sec.get("created", []))
+                preview_v2_update += len(sec.get("updated", [])) + len(sec.get("renamed", []))
 
         if args.dry_run:
             dry_results: Dict[str, Any] = {}
@@ -2997,7 +3031,11 @@ def generate_manifest_skills(
                 bool(expected_generated)
                 and content.rstrip("\n") == expected_generated.rstrip("\n")
             )
-            if not _is_pure_cypilot_generated(content) and not matches_generated_body:
+            if not _is_pure_cypilot_generated(
+                content,
+                expected_name=skill_id,
+                expected_description=skill.description or None,
+            ) and not matches_generated_body:
                 continue
             rel = legacy_rel
             if not dry_run:
