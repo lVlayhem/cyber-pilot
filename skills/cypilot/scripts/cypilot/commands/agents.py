@@ -95,7 +95,7 @@ def _file_has_cypilot_follow_link(path: Path) -> bool:
     """Return True when *path* exists and contains a Cypilot follow-link."""
     try:
         return bool(_extract_cypilot_follow_target(path.read_text(encoding="utf-8")))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
 
 
@@ -1135,7 +1135,7 @@ def _has_non_openai_install_signal(project_root: Path) -> bool:
         try:
             if legacy_ci.read_text(encoding="utf-8").startswith("# Cypilot"):
                 return True
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             pass
 
     return (project_root / ".github" / "prompts" / "cypilot.prompt.md").is_file()
@@ -1175,7 +1175,7 @@ def _is_agent_installed(agent: str, project_root: Path) -> bool:
             try:
                 if legacy_ci.read_text(encoding="utf-8").startswith("# Cypilot"):
                     return True
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 pass
         prompt_file = project_root / ".github" / "prompts" / "cypilot.prompt.md"
         if prompt_file.is_file():
@@ -1193,7 +1193,7 @@ def _is_agent_installed(agent: str, project_root: Path) -> bool:
                     try:
                         if _extract_cypilot_follow_target(f.read_text(encoding="utf-8")):
                             return True
-                    except OSError:
+                    except (OSError, UnicodeDecodeError):
                         pass
         shared_skill = project_root / ".agents" / "skills" / "cypilot" / "SKILL.md"
         if shared_skill.is_file():
@@ -2881,20 +2881,18 @@ def _build_skill_content(
 ) -> str:
     """Assemble the final content for a skill file.
 
-    Applies Claude frontmatter wrapper if *target* == ``"claude"``,
-    appends ``skill.append`` if set, then applies variable substitution.
+    Prepends name/description frontmatter (consistent with the shared
+    .agents/skills/ convention), appends ``skill.append`` if set, then
+    applies variable substitution.
     """
-    if target == "claude":
-        fm_lines = [
-            "---",
-            f"name: {skill_id}",
-            f"description: {_yaml_double_quote(skill.description)}",
-            "---",
-            "",
-        ]
-        content = "\n".join(fm_lines) + source_content
-    else:
-        content = source_content
+    fm_lines = [
+        "---",
+        f"name: {skill_id}",
+        f"description: {_yaml_double_quote(skill.description)}",
+        "---",
+        "",
+    ]
+    content = "\n".join(fm_lines) + source_content
 
     if skill.append:
         content = content.rstrip("\n") + "\n" + skill.append
@@ -2938,6 +2936,7 @@ def generate_manifest_skills(
         "created": [],
         "updated": [],
         "unchanged": [],
+        "deleted": [],
         "outputs": [],
     }
     generated_skill_contents: Dict[str, str] = {}
@@ -3007,6 +3006,7 @@ def generate_manifest_skills(
                     legacy_path.unlink()
                 except OSError:
                     continue
+            result["deleted"].append(rel)
             result["outputs"].append({"path": rel, "action": "deleted"})
 
     # Step 3: Return result dict

@@ -83,7 +83,7 @@ Without this feature, users would need to manually create and maintain agent-spe
 6. - `p1` - Collect `@cpt:system-prompt` content from `.gen/AGENTS.md` - `inst-collect-sysprompt`
 7. [x] - `p1` - **FOR EACH** supported agent (or filtered by `--agent`) - `inst-for-each-agent`
    1. - `p1` - Generate agent-native entry points (skill shims, workflow proxies, rules) - `inst-generate-entry-points`
-   2. - `p1` - Write files to agent directory (e.g., `.windsurf/workflows/`, `.cursor/rules/`) - `inst-write-files`
+   2. - `p1` - Write files to agent directory (e.g., `.windsurf/workflows/`, `.cursor/commands/`) - `inst-write-files`
 8. - `p1` - Compose and write main SKILL.md from collected skill sections - `inst-compose-skill`
 9. - `p1` - Inject the same managed `cypilot_path` block into root AGENTS.md and CLAUDE.md - `inst-inject-agents`
 10. [x] - `p1` - **RETURN** generation report (agents, files written, workflows discovered) - `inst-return-report`

@@ -2296,7 +2296,7 @@ class TestExtractCypilotFollowTarget(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class TestIsPureCypilotGenerated(unittest.TestCase):
+class TestIsPureCypilotGeneratedV2(unittest.TestCase):
     """Cover _is_pure_cypilot_generated checks."""
 
     def test_pure_generated_with_frontmatter(self):
