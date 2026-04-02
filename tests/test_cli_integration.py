@@ -463,10 +463,10 @@ class TestCLIAgentsCommand(unittest.TestCase):
             self.assertGreater(agent_r.get("workflows", {}).get("counts", {}).get("created", 0), 0)
 
             # Ensure description is always double-quoted in generated skill frontmatter
-            skill_file = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
+            skill_file = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
             self.assertTrue(skill_file.exists())
             content = skill_file.read_text(encoding="utf-8")
-            self.assertRegex(content, r"(?m)^description:\s+\".*\"\s*$", msg="description not quoted in windsurf skill output")
+            self.assertRegex(content, r"(?m)^description:\s+\".*\"\s*$", msg="description not quoted in .agents skill output")
 
     def test_agents_claude_skill_description_is_quoted(self):
         """Test claude skill files render description in quoted YAML frontmatter."""
@@ -1443,7 +1443,7 @@ class TestCLIAgentsAtPathFormat(unittest.TestCase):
 
             self._run_agents("windsurf", root, root)
 
-            skill = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
+            skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
             self.assertTrue(skill.exists())
             content = skill.read_text(encoding="utf-8")
             self.assertIn("{cypilot_path}/", content, "Skill output must use {cypilot_path}/ path prefix")
@@ -1454,7 +1454,7 @@ class TestCLIAgentsAtPathFormat(unittest.TestCase):
         agents_and_files = {
             "windsurf": [
                 ".windsurf/workflows/cypilot-generate.md",
-                ".windsurf/skills/cypilot/SKILL.md",
+                ".agents/skills/cypilot/SKILL.md",
                 ".windsurf/workflows/cypilot.md",
             ],
             "claude": [
@@ -1462,13 +1462,14 @@ class TestCLIAgentsAtPathFormat(unittest.TestCase):
                 ".claude/skills/cypilot-generate/SKILL.md",
             ],
             "copilot": [
+                ".agents/skills/cypilot/SKILL.md",
                 ".github/copilot-instructions.md",
                 ".github/prompts/cypilot.prompt.md",
                 ".github/prompts/cypilot-generate.prompt.md",
             ],
             "cursor": [
                 ".cursor/commands/cypilot-generate.md",
-                ".cursor/rules/cypilot.mdc",
+                ".agents/skills/cypilot/SKILL.md",
                 ".cursor/commands/cypilot.md",
             ],
             "openai": [

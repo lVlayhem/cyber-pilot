@@ -460,7 +460,7 @@ class TestGenerateManifestSkills(unittest.TestCase):
                 )
             }
             generate_manifest_skills(skills, "cursor", project_root, dry_run=False)
-            out_path = project_root / ".cursor" / "rules" / "cursor-skill.mdc"
+            out_path = project_root / ".agents" / "skills" / "cursor-skill" / "SKILL.md"
             self.assertTrue(out_path.exists(), f"Expected {out_path} to exist")
 
     def test_skill_result_dict_has_required_keys(self):
@@ -498,8 +498,8 @@ class TestGenerateManifestSkills(unittest.TestCase):
             # Prompt body must also appear after frontmatter
             self.assertIn("# Standctl", content)
 
-    def test_non_claude_skill_has_no_yaml_frontmatter(self):
-        """Non-Claude skill output does not get YAML frontmatter injected."""
+    def test_non_claude_skill_has_yaml_frontmatter(self):
+        """Non-Claude skill output gets the same name/description frontmatter as Claude."""
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir)
             src = project_root / "skills" / "my-rule.md"
@@ -516,10 +516,13 @@ class TestGenerateManifestSkills(unittest.TestCase):
                 )
             }
             generate_manifest_skills(skills, "cursor", project_root, dry_run=False)
-            out_path = project_root / ".cursor" / "rules" / "my-rule.mdc"
+            out_path = project_root / ".agents" / "skills" / "my-rule" / "SKILL.md"
             content = out_path.read_text(encoding="utf-8")
-            # Cursor skill: content is passed through as-is (no injected frontmatter)
-            self.assertTrue(content.startswith("# My Rule"), "Cursor skill must not have injected frontmatter")
+            # All skills now get name/description frontmatter for consistent shared-dir shape
+            self.assertTrue(content.startswith("---\n"), "Non-Claude skill must have YAML frontmatter")
+            self.assertIn("name: my-rule", content)
+            self.assertIn("A cursor rule", content)
+            self.assertIn("# My Rule", content)
 
 
 # ---------------------------------------------------------------------------
