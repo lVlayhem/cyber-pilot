@@ -251,6 +251,10 @@ This is intentional.
 
 Cyber Pilot is designed to trade some speed, token efficiency, and spontaneity for more control, stronger structure, better traceability, and more repeatable multi-step execution.
 
+Part of that tradeoff is visible in the implementation shape itself: Cyber Pilot has a lot of orchestration logic in scripts and a lot of behavioral instructions in Markdown. That is a known cost of making workflows, validation, routing, and traceability more explicit and reproducible.
+
+For smaller projects, that can look like real overhead. The point is not that the overhead is imaginary; the point is that it is the price paid for the benefits above.
+
 ---
 
 ## A critical clarification about IDs and code generation
@@ -754,6 +758,8 @@ cpt workspace-add --name shared-kits --path ../shared-kits --role kits
 ```
 
 When a workspace is active, the current repo remains primary, while other sources contribute artifacts, code, and kits for cross-reference resolution.
+
+One practical way to reduce overhead for many smaller repos is to keep a dedicated **orchestration repository** with the full Cyber Pilot setup and a preconfigured workspace, then connect multiple smaller product or service repos into that workspace. That keeps the orchestration weight centralized instead of fully reproducing it inside every small repository.
 
 Useful commands:
 
