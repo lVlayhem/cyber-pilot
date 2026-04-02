@@ -85,7 +85,7 @@ Accepted delegated execution extends this model by allowing Cypilot-authored pla
 
 - [x] `p1` - `cpt-cypilot-fr-core-agents`
 
-**Design Response**: Agent Generator component produces entry points in each agent's native format: `.windsurf/workflows/`, `.cursor/rules/`, `.claude/commands/`, `.github/prompts/`. All entry points reference the core SKILL.md. The `agents` command fully overwrites entry points on each invocation. Executor delegation is intentionally separate from this agent-entry-point surface: host-tool shims stay chat-facing integrations, while ralphex is exposed only through a dedicated delegation skill and exported plan artifacts.
+**Design Response**: Agent Generator component produces entry points in each agent's native format — workflow proxies in tool-native directories and shared skill stubs in `.agents/skills/`. Workflow proxies: `.windsurf/workflows/` (Windsurf), `.cursor/commands/` (Cursor), `.claude/commands/` (Claude), `.github/prompts/` (Copilot). Workflow proxies and shared skill stubs reference the core SKILL.md. OpenAI agents use shared `.agents/skills/` only. The `agents` command fully overwrites entry points on each invocation. Executor delegation is intentionally separate from this agent-entry-point surface: host-tool shims stay chat-facing integrations, while ralphex is exposed only through a dedicated delegation skill and exported plan artifacts.
 
 ##### Extensible Kit System
 
@@ -715,9 +715,10 @@ Bridges the gap between Cypilot's unified skill system and the diverse file form
 ##### Responsibility scope
 
 - Generate workflow entry points in each agent's native format from kit workflow files (e.g., `.windsurf/workflows/cypilot-{name}.md` → `config/kits/<slug>/workflows/{name}.md`)
+- Generate shared skill stubs in `.agents/skills/{id}/SKILL.md` for all non-Claude agents, referencing the core SKILL.md
 - Compose SKILL.md: collect kit SKILL.md extensions and assemble them into the main SKILL.md alongside core commands
 - Generate skill shims that reference the composed SKILL.md
-- Support 5 agents: Windsurf (`.windsurf/workflows/`), Cursor (`.cursor/rules/`), Claude (`.claude/commands/`), Copilot (`.github/prompts/`), OpenAI
+- Support 5 agents: Windsurf (`.windsurf/workflows/` + `.agents/skills/`), Cursor (`.cursor/commands/` + `.agents/skills/`), Claude (`.claude/commands/` + `.claude/agents/`), Copilot (`.github/prompts/` + `.github/agents/` + `.agents/skills/`), OpenAI (`.agents/skills/` only)
 - Full overwrite on each invocation (no merge with existing files)
 - Support `--agent` flag for single-agent regeneration
 

@@ -460,7 +460,7 @@ class TestGenerateManifestSkills(unittest.TestCase):
                 )
             }
             generate_manifest_skills(skills, "cursor", project_root, dry_run=False)
-            out_path = project_root / ".cursor" / "rules" / "cursor-skill.mdc"
+            out_path = project_root / ".agents" / "skills" / "cursor-skill" / "SKILL.md"
             self.assertTrue(out_path.exists(), f"Expected {out_path} to exist")
 
     def test_skill_result_dict_has_required_keys(self):
@@ -516,10 +516,10 @@ class TestGenerateManifestSkills(unittest.TestCase):
                 )
             }
             generate_manifest_skills(skills, "cursor", project_root, dry_run=False)
-            out_path = project_root / ".cursor" / "rules" / "my-rule.mdc"
+            out_path = project_root / ".agents" / "skills" / "my-rule" / "SKILL.md"
             content = out_path.read_text(encoding="utf-8")
-            # Cursor skill: content is passed through as-is (no injected frontmatter)
-            self.assertTrue(content.startswith("# My Rule"), "Cursor skill must not have injected frontmatter")
+            # Non-Claude skill: content is passed through as-is (no injected frontmatter)
+            self.assertTrue(content.startswith("# My Rule"), "Non-Claude skill must not have injected frontmatter")
 
 
 # ---------------------------------------------------------------------------

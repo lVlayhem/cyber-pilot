@@ -45,6 +45,60 @@ _TMPL_DESCRIPTION = "description: {description}"
 _AGENT_TEMPLATE_HEADER = ["---", _TMPL_NAME, _TMPL_DESCRIPTION]
 _ALWAYS_FOLLOW_TARGET_PATH = "ALWAYS open and follow `{target_path}`"
 _FOLLOW_LINK_RE = re.compile(r"ALWAYS open and follow `([^`]+)`")
+
+
+def _extract_cypilot_follow_target(content: str) -> Optional[str]:
+    """Return the follow-link target if *content* is a Cypilot-generated routing file.
+
+    Returns the target path string when the content contains
+    ``ALWAYS open and follow `<target>``` with a Cypilot-owned target
+    (must start with ``{cypilot_path}/``).  Returns ``None`` otherwise.
+
+    Note: ``@/`` (project-relative) paths are NOT accepted because any
+    tool can use that prefix — it is not Cypilot-specific.
+    """
+    m = _FOLLOW_LINK_RE.search(content)
+    if not m:
+        return None
+    target = m.group(1)
+    if target.startswith("{cypilot_path}/"):
+        return target
+    return None
+
+
+def _is_pure_cypilot_generated(content: str) -> bool:
+    """Return True only if *content* is a pure Cypilot-generated stub with no user content.
+
+    A pure generated file consists of optional YAML frontmatter, optional
+    blank lines, and the ``ALWAYS open and follow`` directive — nothing else.
+    Files that contain a Cypilot follow-link *plus* additional user-authored
+    content are **not** considered pure generated and must be preserved.
+    """
+    if not _extract_cypilot_follow_target(content):
+        return False
+    # Strip optional YAML frontmatter
+    stripped = content
+    if stripped.startswith("---"):
+        end = stripped.find("\n---", 3)
+        if end != -1:
+            stripped = stripped[end + 4:]  # skip past closing ---
+    # Remove all follow-link lines
+    lines = [
+        line for line in stripped.splitlines()
+        if not _FOLLOW_LINK_RE.search(line)
+    ]
+    # If only whitespace remains, the file is purely generated
+    return not any(line.strip() for line in lines)
+
+
+def _file_has_cypilot_follow_link(path: Path) -> bool:
+    """Return True when *path* exists and contains a Cypilot follow-link."""
+    try:
+        return bool(_extract_cypilot_follow_target(path.read_text(encoding="utf-8")))
+    except OSError:
+        return False
+
+
 _VALID_AGENT_MODES = {"readwrite", "readonly"}
 _KNOWN_AGENT_MODELS = {"inherit", "fast"}
 
@@ -453,8 +507,66 @@ def _render_toml_agent(agent: Dict[str, Any], target_agent_path: str) -> str:
 
 
 # @cpt-begin:cpt-cypilot-algo-agent-integration-discover-agents:p1:inst-define-registry
+def _agents_skill_outputs() -> list:
+    """Shared .agents/skills/ outputs for all non-Claude tools.
+
+    These templates are tool-agnostic — no ``{custom_content}`` because the
+    same file is written identically regardless of which tool triggers it.
+    """
+    _AGENTS_SKILL_TEMPLATE = [
+        "---",
+        "name: {name}",
+        _TMPL_DESCRIPTION,
+        "---",
+        "",
+        "ALWAYS open and follow `{target_skill_path}`",
+    ]
+    _AGENTS_WORKFLOW_SKILL_TEMPLATE = [
+        "---",
+        "name: {name}",
+        _TMPL_DESCRIPTION,
+        "---",
+        "",
+        _ALWAYS_FOLLOW_TARGET_PATH,
+    ]
+    return [
+        {
+            "path": ".agents/skills/cypilot/SKILL.md",
+            "template": list(_AGENTS_SKILL_TEMPLATE),
+        },
+        {
+            "path": ".agents/skills/cypilot-generate/SKILL.md",
+            "target": "workflows/generate.md",
+            "template": list(_AGENTS_WORKFLOW_SKILL_TEMPLATE),
+        },
+        {
+            "path": ".agents/skills/cypilot-analyze/SKILL.md",
+            "target": "workflows/analyze.md",
+            "template": list(_AGENTS_WORKFLOW_SKILL_TEMPLATE),
+        },
+        {
+            "path": ".agents/skills/cypilot-plan/SKILL.md",
+            "target": "workflows/plan.md",
+            "template": list(_AGENTS_WORKFLOW_SKILL_TEMPLATE),
+        },
+        {
+            "path": ".agents/skills/cypilot-workspace/SKILL.md",
+            "target": "workflows/workspace.md",
+            "template": list(_AGENTS_WORKFLOW_SKILL_TEMPLATE),
+        },
+    ]
+
+
 def _default_agents_config() -> dict:
-    """Unified config for both workflows and skills registration per agent."""
+    """Unified config for both workflows and skills registration per agent.
+
+    Skill outputs use two conventions:
+    - Claude  → ``.claude/skills/`` (Claude-native with allowed-tools, user-invocable)
+    - Others  → ``.agents/skills/`` (shared directory readable by all tools)
+
+    Workflow outputs remain tool-specific (slash commands need per-tool dirs).
+    """
+    shared_skills = _agents_skill_outputs()
     return {
         "version": 1,
         "agents": {
@@ -474,19 +586,7 @@ def _default_agents_config() -> dict:
                 "skills": {
                     "skill_name": "cypilot",
                     "custom_content": "",
-                    "outputs": [
-                        {
-                            "path": ".windsurf/skills/cypilot/SKILL.md",
-                            "template": [
-                                "---",
-                                _TMPL_NAME,
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                "{custom_content}",
-                                "ALWAYS open and follow `{target_skill_path}`",
-                            ],
-                        },
+                    "outputs": shared_skills + [
                         {
                             "path": ".windsurf/workflows/cypilot.md",
                             "template": [
@@ -514,19 +614,7 @@ def _default_agents_config() -> dict:
                 },
                 "skills": {
                     "custom_content": "",
-                    "outputs": [
-                        {
-                            "path": ".cursor/rules/cypilot.mdc",
-                            "template": [
-                                "---",
-                                _TMPL_DESCRIPTION,
-                                "alwaysApply: true",
-                                "---",
-                                "",
-                                "{custom_content}",
-                                "ALWAYS open and follow `{target_skill_path}`",
-                            ],
-                        },
+                    "outputs": shared_skills + [
                         {
                             "path": ".cursor/commands/cypilot.md",
                             "template": [
@@ -639,14 +727,13 @@ def _default_agents_config() -> dict:
                 },
                 "skills": {
                     "custom_content": "",
-                    "outputs": [
+                    "outputs": shared_skills + [
                         {
                             "path": ".github/copilot-instructions.md",
                             "template": [
                                 "# Cypilot",
                                 "",
                                 "{custom_content}",
-                                "ALWAYS open and follow `{target_skill_path}`",
                             ],
                         },
                         {
@@ -667,68 +754,7 @@ def _default_agents_config() -> dict:
             "openai": {
                 "skills": {
                     "custom_content": "",
-                    "outputs": [
-                        {
-                            "path": ".agents/skills/cypilot/SKILL.md",
-                            "template": [
-                                "---",
-                                "name: cypilot",
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                "{custom_content}",
-                                "ALWAYS open and follow `{target_skill_path}`",
-                            ],
-                        },
-                        {
-                            "path": ".agents/skills/cypilot-generate/SKILL.md",
-                            "target": "workflows/generate.md",
-                            "template": [
-                                "---",
-                                "name: cypilot-generate",
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                _ALWAYS_FOLLOW_TARGET_PATH,
-                            ],
-                        },
-                        {
-                            "path": ".agents/skills/cypilot-analyze/SKILL.md",
-                            "target": "workflows/analyze.md",
-                            "template": [
-                                "---",
-                                "name: cypilot-analyze",
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                _ALWAYS_FOLLOW_TARGET_PATH,
-                            ],
-                        },
-                        {
-                            "path": ".agents/skills/cypilot-plan/SKILL.md",
-                            "target": "workflows/plan.md",
-                            "template": [
-                                "---",
-                                "name: cypilot-plan",
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                _ALWAYS_FOLLOW_TARGET_PATH,
-                            ],
-                        },
-                        {
-                            "path": ".agents/skills/cypilot-workspace/SKILL.md",
-                            "target": "workflows/workspace.md",
-                            "template": [
-                                "---",
-                                "name: cypilot-workspace",
-                                _TMPL_DESCRIPTION,
-                                "---",
-                                "",
-                                _ALWAYS_FOLLOW_TARGET_PATH,
-                            ],
-                        },
-                    ],
+                    "outputs": list(shared_skills),
                 },
             },
         },
@@ -975,9 +1001,219 @@ def _list_workflow_files(cypilot_root: Path, project_root: Optional[Path] = None
     return out
 # @cpt-end:cpt-cypilot-algo-agent-integration-list-workflows:p1:inst-scan-core-workflows
 
+# ---------------------------------------------------------------------------
+# Kit workflow → skill generation for skill-native tools
+# ---------------------------------------------------------------------------
+# Tools that fully support user-invocable skills do NOT need legacy slash-
+# command/workflow files.  Instead, discovered kit workflows are emitted as
+# proper skill entries so they appear in the tool's skill list (e.g.
+# /cypilot-pr-review in Claude Code) without a separate .claude/commands/ file.
+
+_KIT_WORKFLOW_SKILL_PATHS: Dict[str, str] = {
+    "claude": ".claude/skills/{skill_id}/SKILL.md",
+    # All non-Claude tools share .agents/skills/
+    "openai": ".agents/skills/{skill_id}/SKILL.md",
+    "windsurf": ".agents/skills/{skill_id}/SKILL.md",
+    "cursor": ".agents/skills/{skill_id}/SKILL.md",
+    "copilot": ".agents/skills/{skill_id}/SKILL.md",
+}
+
+_AGENTS_KIT_WORKFLOW_TEMPLATE: List[str] = [
+    "---",
+    "name: {name}",
+    _TMPL_DESCRIPTION,
+    "---",
+    "",
+    _ALWAYS_FOLLOW_TARGET_PATH,
+]
+
+_KIT_WORKFLOW_SKILL_TEMPLATES: Dict[str, List[str]] = {
+    "claude": [
+        "---",
+        "name: {name}",
+        _TMPL_DESCRIPTION,
+        "disable-model-invocation: false",
+        "user-invocable: true",
+        "allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch",
+        "---",
+        "",
+        _ALWAYS_FOLLOW_TARGET_PATH,
+    ],
+    "openai": _AGENTS_KIT_WORKFLOW_TEMPLATE,
+    "windsurf": _AGENTS_KIT_WORKFLOW_TEMPLATE,
+    "cursor": _AGENTS_KIT_WORKFLOW_TEMPLATE,
+    "copilot": _AGENTS_KIT_WORKFLOW_TEMPLATE,
+}
+
+
+def _generate_kit_workflow_skills(
+    agent: str,
+    project_root: Path,
+    cypilot_root: Path,
+    skill_output_paths: Set[str],
+    skills_result: Dict[str, Any],
+    dry_run: bool,
+    kit_workflows: Optional[List[Tuple[str, str]]] = None,
+) -> None:
+    """Emit skill entries for kit workflows on skill-native tools.
+
+    For tools that have no ``workflows`` config (i.e. they fully support
+    user-invocable skills), discovered kit workflows are generated as
+    skill files instead of legacy slash-command proxies.
+    """
+    path_pattern = _KIT_WORKFLOW_SKILL_PATHS.get(agent)
+    template = _KIT_WORKFLOW_SKILL_TEMPLATES.get(agent)
+    if not path_pattern or not template:
+        return
+
+    if kit_workflows is None:
+        kit_workflows = _list_workflow_files(cypilot_root, project_root)
+
+    for wf_filename, wf_full_path in kit_workflows:
+        wf_name = Path(wf_filename).stem
+        skill_id = f"cypilot-{wf_name}" if wf_name != "cypilot" else "cypilot"
+
+        out_rel = path_pattern.format(skill_id=skill_id)
+        out_path = (project_root / out_rel).resolve()
+
+        # Skip if already covered by a hardcoded skill output
+        if out_path.as_posix() in skill_output_paths:
+            continue
+
+        fm = _parse_frontmatter(wf_full_path)
+        target_rel = _target_path_from_root(wf_full_path, project_root, cypilot_root)
+        name = fm.get("name", skill_id)
+        description = fm.get("description", f"Cypilot {wf_name} workflow")
+
+        content = _render_template(
+            template,
+            {"name": name, "description": description, "target_path": target_rel},
+        )
+
+        _write_or_skip(out_path, content, skills_result, project_root, dry_run)
+
+
 # @cpt-begin:cpt-cypilot-algo-agent-integration-discover-agents:p1:inst-define-registry-const
 _ALL_RECOGNIZED_AGENTS = ["windsurf", "cursor", "claude", "copilot", "openai"]
 # @cpt-end:cpt-cypilot-algo-agent-integration-discover-agents:p1:inst-define-registry-const
+
+# Per-tool Cypilot-specific generated files — used to detect which agents
+# are actually installed.  We check for specific Cypilot-generated files
+# rather than generic tool directories to avoid false positives when
+# unrelated tool files exist (e.g. .cursor/commands/other.md).
+_AGENT_MARKERS: Dict[str, List[str]] = {
+    "claude":   [".claude/skills/cypilot/SKILL.md"],
+    "windsurf": [".windsurf/workflows/cypilot.md"],
+    "cursor":   [".cursor/commands/cypilot.md"],
+    "copilot":  [".github/.cypilot-installed"],
+    # Fresh OpenAI installs create .codex/.cypilot-installed.
+    # Legacy fallback handled by _is_agent_installed().
+    "openai":   [".codex/.cypilot-installed"],
+}
+
+# Non-OpenAI tool markers — used to disambiguate the shared
+# .agents/skills/ directory for legacy OpenAI detection.
+_NON_OPENAI_MARKERS = [
+    m for agent, ms in _AGENT_MARKERS.items()
+    if agent != "openai" for m in ms
+]
+
+
+def _has_non_openai_install_signal(project_root: Path) -> bool:
+    """Return True when any non-OpenAI Cypilot install marker or legacy fallback exists."""
+    if any((project_root / m).is_file() for m in _NON_OPENAI_MARKERS):
+        return True
+
+    if _file_has_cypilot_follow_link(project_root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"):
+        return True
+
+    if _file_has_cypilot_follow_link(project_root / ".cursor" / "rules" / "cypilot.mdc"):
+        return True
+
+    legacy_ci = project_root / ".github" / "copilot-instructions.md"
+    if legacy_ci.is_file():
+        try:
+            if legacy_ci.read_text(encoding="utf-8").startswith("# Cypilot"):
+                return True
+        except OSError:
+            pass
+
+    return (project_root / ".github" / "prompts" / "cypilot.prompt.md").is_file()
+
+
+def _is_agent_installed(agent: str, project_root: Path) -> bool:
+    """Return True when *agent* has a Cypilot install detected under *project_root*.
+
+    Checks primary markers first, then legacy fallbacks per agent.
+    """
+    markers = _AGENT_MARKERS.get(agent, [])
+    if any((project_root / m).is_file() for m in markers):
+        return True
+
+    # ── Legacy Windsurf fallback ──────────────────────────────────────────
+    # Pre-shared-agents installs used .windsurf/skills/cypilot/SKILL.md.
+    if agent == "windsurf":
+        legacy = project_root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
+        if _file_has_cypilot_follow_link(legacy):
+            return True
+
+    # ── Legacy Cursor fallback ────────────────────────────────────────────
+    # Pre-shared-agents installs used .cursor/rules/cypilot.mdc.
+    if agent == "cursor":
+        legacy = project_root / ".cursor" / "rules" / "cypilot.mdc"
+        if _file_has_cypilot_follow_link(legacy):
+            return True
+
+    # ── Legacy Copilot fallback ───────────────────────────────────────────
+    # A Cypilot-managed copilot-instructions.md (starts with "# Cypilot")
+    # is a valid signal from pre-marker installs.  Also detect via
+    # .github/prompts/cypilot.prompt.md for installs where the instructions
+    # file was user-authored but other Copilot outputs were generated.
+    if agent == "copilot":
+        legacy_ci = project_root / ".github" / "copilot-instructions.md"
+        if legacy_ci.is_file():
+            try:
+                if legacy_ci.read_text(encoding="utf-8").startswith("# Cypilot"):
+                    return True
+            except OSError:
+                pass
+        prompt_file = project_root / ".github" / "prompts" / "cypilot.prompt.md"
+        if prompt_file.is_file():
+            return True
+
+    # ── Legacy OpenAI fallback ────────────────────────────────────────────
+    # Detect via Cypilot-specific artifacts inside .codex/ (agents/*.toml
+    # with follow-link) or via shared .agents/skills/cypilot/SKILL.md when
+    # no other tool's marker is present.
+    if agent == "openai":
+        codex_agents = project_root / ".codex" / "agents"
+        if codex_agents.is_dir():
+            for f in codex_agents.iterdir():
+                if f.is_file():
+                    try:
+                        if _extract_cypilot_follow_target(f.read_text(encoding="utf-8")):
+                            return True
+                    except OSError:
+                        pass
+        shared_skill = project_root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+        if shared_skill.is_file():
+            if not _has_non_openai_install_signal(project_root):
+                return True
+
+    return False
+
+
+# Legacy tool-specific skill paths replaced by shared .agents/skills/
+_LEGACY_TOOL_SKILL_PATHS: Dict[str, List[str]] = {
+    "windsurf": [".windsurf/skills/cypilot/SKILL.md"],
+    "cursor": [".cursor/rules/cypilot.mdc"],
+}
+
+# Cypilot installation markers for agents that share generic directories
+_INSTALL_MARKERS: Dict[str, Tuple[str, str]] = {
+    "openai":  (".codex/.cypilot-installed", "# Cypilot OpenAI/Codex integration marker\n"),
+    "copilot": (".github/.cypilot-installed", "# Cypilot Copilot integration marker\n"),
+}
 
 # @cpt-begin:cpt-cypilot-algo-agent-integration-generate-shims:p1:inst-create-proxy
 def _process_single_agent(
@@ -1265,7 +1501,33 @@ def _process_single_agent(
                         },
                     )
 
+                    # Guard: skip overwriting user-authored copilot-instructions.md.
+                    # The file is only Cypilot-managed when it starts with "# Cypilot".
+                    if rel_path == ".github/copilot-instructions.md" and out_path.is_file():
+                        try:
+                            existing = out_path.read_text(encoding="utf-8")
+                        except OSError:
+                            existing = ""
+                        if not existing.startswith("# Cypilot"):
+                            rel = _safe_relpath(out_path.resolve(), project_root)
+                            skills_result["skipped"].append(
+                                f"{rel} (user-authored, not overwriting)"
+                            )
+                            skills_result["_copilot_user_authored"] = True
+                            continue
+
                     _write_or_skip(out_path, content, skills_result, project_root, dry_run)
+
+    # ── Kit workflows → shared skills ──────────────────────────────────────
+    # Always generate .agents/skills/ entries for kit workflows so that every
+    # non-Claude agent has accessible shared skill files, regardless of whether
+    # a separate workflows_cfg produces tool-native proxy files.
+    _cached_kit_workflows = _list_workflow_files(cypilot_root, project_root)
+    _generate_kit_workflow_skills(
+        agent, project_root, cypilot_root, skill_output_paths,
+        skills_result, dry_run,
+        kit_workflows=_cached_kit_workflows,
+    )
 
     # ── Clean up legacy .claude/commands/ files that are now replaced by skills ──
     if agent == "claude" and isinstance(skills_cfg, dict):
@@ -1317,6 +1579,72 @@ def _process_single_agent(
                             skills_result["errors"].append(f"failed to delete {rel_path}")
                     else:
                         skills_result["deleted"].append(rel_path)
+
+    # ── Clean up legacy commands for kit workflows now emitted as skills ──
+    if agent == "claude" and _cached_kit_workflows is not None:
+        legacy_commands_dir = project_root / ".claude" / "commands"
+        if legacy_commands_dir.is_dir():
+            for wf_filename, wf_full_path in _cached_kit_workflows:
+                wf_name = Path(wf_filename).stem
+                cmd_name = f"cypilot-{wf_name}" if wf_name != "cypilot" else "cypilot"
+                legacy_file = legacy_commands_dir / f"{cmd_name}.md"
+                if not legacy_file.is_file():
+                    continue
+                rel_path = legacy_file.relative_to(project_root).as_posix()
+                try:
+                    content = legacy_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                # Only delete if provably Cypilot-generated (no user content) and targeting a workflow
+                follow_target = _extract_cypilot_follow_target(content)
+                if not follow_target or "workflows/" not in follow_target:
+                    continue
+                if not _is_pure_cypilot_generated(content):
+                    continue
+                if not dry_run:
+                    try:
+                        legacy_file.unlink()
+                        skills_result["deleted"].append(rel_path)
+                    except OSError:
+                        skills_result["errors"].append(f"failed to delete {rel_path}")
+                else:
+                    skills_result["deleted"].append(rel_path)
+
+    # ── Clean up legacy tool-specific skill files now replaced by .agents/skills/ ──
+    for legacy_rel in _LEGACY_TOOL_SKILL_PATHS.get(agent, []):
+        legacy_file = project_root / legacy_rel
+        if not legacy_file.is_file():
+            continue
+        try:
+            content = legacy_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Only delete if provably Cypilot-generated (no user content beyond the stub).
+        if not _is_pure_cypilot_generated(content):
+            continue
+        rel_path = legacy_rel
+        if not dry_run:
+            try:
+                legacy_file.unlink()
+                skills_result["deleted"].append(rel_path)
+            except OSError:
+                skills_result["errors"].append(f"failed to delete {rel_path}")
+        else:
+            skills_result["deleted"].append(rel_path)
+
+    # ── Install markers ───────────────────────────────────────────────────
+    # Tools that share generic directories need a unique Cypilot-specific
+    # marker so detection/regeneration can distinguish Cypilot installs from
+    # unrelated user files.  The marker is always created when the agent is
+    # processed — even if copilot-instructions.md was preserved as user-
+    # authored, the other generated outputs (prompts, shared skills, agents)
+    # still need to be managed by future `cpt update` runs.
+    marker_info = _INSTALL_MARKERS.get(agent)
+    if marker_info and not dry_run:
+        marker = project_root / marker_info[0]
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        if not marker.exists():
+            marker.write_text(marker_info[1], encoding="utf-8")
 
     # ── Subagent generation ────────────────────────────────────────────
     subagents_result: Dict[str, Any] = {"created": [], "updated": [], "deleted": [], "skipped": False, "outputs": [], "errors": []}
@@ -2450,12 +2778,15 @@ def translate_agent_schema(agent: "_AgentEntry", target: str) -> Dict[str, Any]:
 
 
 # Skill output paths per agent tool
+# All skills go to shared .agents/skills/ directory (readable by all agents)
+# Agent targeting is enforced via frontmatter metadata in the generated file
 _SKILL_OUTPUT_PATHS: Dict[str, str] = {
     "claude":   ".claude/skills/{id}/SKILL.md",
-    "cursor":   ".cursor/rules/{id}.mdc",
-    "copilot":  ".github/skills/{id}.md",
+    # All non-Claude tools share .agents/skills/
+    "cursor":   ".agents/skills/{id}/SKILL.md",
+    "copilot":  ".agents/skills/{id}/SKILL.md",
     "openai":   ".agents/skills/{id}/SKILL.md",
-    "windsurf": ".windsurf/skills/{id}/SKILL.md",
+    "windsurf": ".agents/skills/{id}/SKILL.md",
 }
 
 
@@ -2609,6 +2940,7 @@ def generate_manifest_skills(
         "unchanged": [],
         "outputs": [],
     }
+    generated_skill_contents: Dict[str, str] = {}
 
     path_template = _SKILL_OUTPUT_PATHS.get(target, f".{target}/skills/{{id}}/SKILL.md")
 
@@ -2632,6 +2964,7 @@ def generate_manifest_skills(
 
         # Step 1.2: Apply agent-specific frontmatter, appends, and variables
         content = _build_skill_content(skill_id, skill, target, source_content, variables)
+        generated_skill_contents[skill_id] = content
 
         # Step 1.3: Determine output path using agent-native conventions
         rel_out = path_template.replace("{id}", skill_id)
@@ -2639,6 +2972,42 @@ def generate_manifest_skills(
 
         # Step 1.4: Write skill file to output path using _write_or_skip
         _write_or_skip(out_path, content, result, project_root, dry_run)
+
+    # Step 2: Clean up legacy manifest-skill files from old per-tool paths
+    _LEGACY_SKILL_OUTPUT_PATHS: Dict[str, str] = {
+        "cursor":   ".cursor/rules/{id}.mdc",
+        "copilot":  ".github/skills/{id}.md",
+        "windsurf": ".windsurf/skills/{id}/SKILL.md",
+    }
+    legacy_pattern = _LEGACY_SKILL_OUTPUT_PATHS.get(target)
+    if legacy_pattern:
+        for skill_id, skill in skills.items():
+            # Same agent-targeting filter as generation (empty = all targets)
+            if skill.agents and target not in skill.agents:
+                continue
+            legacy_rel = legacy_pattern.replace("{id}", skill_id)
+            legacy_path = project_root / legacy_rel
+            if not legacy_path.is_file():
+                continue
+            # Only delete if provably Cypilot-generated (no user content beyond the stub).
+            try:
+                content = legacy_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            expected_generated = generated_skill_contents.get(skill_id, "")
+            matches_generated_body = (
+                bool(expected_generated)
+                and content.rstrip("\n") == expected_generated.rstrip("\n")
+            )
+            if not _is_pure_cypilot_generated(content) and not matches_generated_body:
+                continue
+            rel = legacy_rel
+            if not dry_run:
+                try:
+                    legacy_path.unlink()
+                except OSError:
+                    continue
+            result["outputs"].append({"path": rel, "action": "deleted"})
 
     # Step 3: Return result dict
     result["unchanged"] = [

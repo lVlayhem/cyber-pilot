@@ -113,7 +113,7 @@ Without this feature, users would need to manually create and maintain agent-spe
 
 - [x] `p1` - **ID**: `cpt-cypilot-algo-agent-integration-discover-agents`
 
-1. [x] - `p1` - Define agent registry: windsurf (`.windsurf/`), cursor (`.cursor/`), claude (`.claude/`), copilot (`.github/prompts/`), openai - `inst-define-registry`
+1. [x] - `p1` - Define agent registry: windsurf, cursor, claude, copilot, openai. Detection uses Cypilot-specific generated files per agent (e.g. `.claude/skills/cypilot/SKILL.md`, `.windsurf/workflows/cypilot.md`, `.cursor/commands/cypilot.md`, `.github/.cypilot-installed` or legacy Cypilot-managed `copilot-instructions.md` for Copilot, `.codex/.cypilot-installed` or `.codex/agents/` with content or legacy `.agents/skills/cypilot/SKILL.md` for OpenAI) — not generic tool directories. The shared OpenAI fallback is valid only when no other agent's primary or legacy Cypilot marker is present. User-authored files are never overwritten, and legacy manifest skill files are removed only when they are provably generated copies or pure generated stubs. - `inst-define-registry`
 2. - `p1` - **IF** `--agent` flag provided, filter to single agent - `inst-if-filter`
 3. - `p1` - **RETURN** list of agents to generate for - `inst-return-agents`
 4. [x] - `p1` - Resolve config/kits/ directory and registered kit dirs from core.toml for workflow/skill discovery - `inst-resolve-kits`

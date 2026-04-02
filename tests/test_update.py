@@ -1165,7 +1165,7 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
             self.assertEqual(result, [])
 
     def test_core_updated_regenerates_existing_agents(self):
-        """When core is updated, agents with existing files are regenerated."""
+        """When core is updated, agents with existing Cypilot-specific files are regenerated."""
         from cypilot.commands.update import _maybe_regenerate_agents
         with TemporaryDirectory() as td:
             root = Path(td) / "proj"
@@ -1174,10 +1174,10 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
             cache = Path(td) / "cache"
             cypilot_dir = self._make_project_with_agents(root, cache)
 
-            # Create a windsurf skill file (simulates already-installed agent)
-            ws_skill = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
-            ws_skill.parent.mkdir(parents=True, exist_ok=True)
-            ws_skill.write_text("old content", encoding="utf-8")
+            # Create Cypilot-specific windsurf marker file
+            wf = root / ".windsurf" / "workflows" / "cypilot.md"
+            wf.parent.mkdir(parents=True)
+            wf.write_text("old", encoding="utf-8")
 
             result = _maybe_regenerate_agents(
                 {"skills": "updated", "architecture": "updated"},
@@ -1185,9 +1185,9 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
                 root, cypilot_dir,
             )
             self.assertIn("windsurf", result)
-            # File should have been updated
-            new_content = ws_skill.read_text(encoding="utf-8")
-            self.assertNotEqual(new_content, "old content")
+            # Shared .agents/skills/ file should have been created
+            agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+            self.assertTrue(agents_skill.exists())
 
     def test_kit_migrated_triggers_regen(self):
         """When a kit is migrated, agents are regenerated."""
@@ -1199,9 +1199,10 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
             cache = Path(td) / "cache"
             cypilot_dir = self._make_project_with_agents(root, cache)
 
-            ws_skill = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
-            ws_skill.parent.mkdir(parents=True, exist_ok=True)
-            ws_skill.write_text("old content", encoding="utf-8")
+            # Create Cypilot-specific windsurf marker file
+            wf = root / ".windsurf" / "workflows" / "cypilot.md"
+            wf.parent.mkdir(parents=True)
+            wf.write_text("old", encoding="utf-8")
 
             result = _maybe_regenerate_agents(
                 {"skills": "skipped"},
@@ -1238,10 +1239,10 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
             cache = Path(td) / "cache"
             cypilot_dir = self._make_project_with_agents(root, cache)
 
-            # Create windsurf skill file (simulates already-installed agent)
-            ws_skill = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
-            ws_skill.parent.mkdir(parents=True, exist_ok=True)
-            ws_skill.write_text("old content", encoding="utf-8")
+            # Create Cypilot-specific windsurf marker file
+            wf = root / ".windsurf" / "workflows" / "cypilot.md"
+            wf.parent.mkdir(parents=True)
+            wf.write_text("old", encoding="utf-8")
 
             cwd = os.getcwd()
             try:
@@ -1255,14 +1256,11 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
                 out = json.loads(buf.getvalue())
                 self.assertIn("agents_regenerated", out["actions"])
                 self.assertIn("windsurf", out["actions"]["agents_regenerated"])
-                # Verify file was actually updated
-                new_content = ws_skill.read_text(encoding="utf-8")
-                self.assertNotEqual(new_content, "old content")
             finally:
                 os.chdir(cwd)
 
     def test_only_installed_agents_regenerated(self):
-        """Only agents with existing files are regenerated, others skipped."""
+        """Only agents with Cypilot-specific files are regenerated, others skipped."""
         from cypilot.commands.update import _maybe_regenerate_agents
         with TemporaryDirectory() as td:
             root = Path(td) / "proj"
@@ -1271,20 +1269,368 @@ class TestMaybeRegenerateAgents(unittest.TestCase):
             cache = Path(td) / "cache"
             cypilot_dir = self._make_project_with_agents(root, cache)
 
-            # Only create cursor agent file
-            cursor_skill = root / ".cursor" / "rules" / "cypilot.mdc"
-            cursor_skill.parent.mkdir(parents=True, exist_ok=True)
-            cursor_skill.write_text("old", encoding="utf-8")
+            # Create Cypilot-specific cursor file + Claude skill file
+            cursor_cmd = root / ".cursor" / "commands" / "cypilot.md"
+            cursor_cmd.parent.mkdir(parents=True)
+            cursor_cmd.write_text("old", encoding="utf-8")
+            (root / ".claude" / "skills" / "cypilot").mkdir(parents=True)
+            (root / ".claude" / "skills" / "cypilot" / "SKILL.md").write_text("old", encoding="utf-8")
 
             result = _maybe_regenerate_agents(
                 {"skills": "updated"},
                 {},
                 root, cypilot_dir,
             )
-            # cursor has existing file → regenerated
+            # cursor has .cursor/commands/cypilot.md → regenerated
             self.assertIn("cursor", result)
-            # windsurf has no files → not regenerated
+            # claude has .claude/skills/cypilot/SKILL.md → regenerated
+            self.assertIn("claude", result)
+            # windsurf has no Cypilot-specific file → not regenerated
             self.assertNotIn("windsurf", result)
+
+    def test_shared_agents_skills_does_not_trigger_all(self):
+        """Shared .agents/skills/cypilot/SKILL.md triggers only OpenAI (legacy compat), not others."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Only create shared .agents/skills/cypilot/SKILL.md — no tool-specific files
+            agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+            agents_skill.parent.mkdir(parents=True, exist_ok=True)
+            agents_skill.write_text("old", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"},
+                {},
+                root, cypilot_dir,
+            )
+            # .agents/skills/cypilot/SKILL.md matches openai (legacy compat)
+            self.assertIn("openai", result)
+            # windsurf, cursor, copilot have no Cypilot-specific markers
+            self.assertNotIn("windsurf", result)
+            self.assertNotIn("cursor", result)
+            self.assertNotIn("copilot", result)
+
+    def test_unrelated_cursor_commands_does_not_trigger(self):
+        """Unrelated .cursor/commands/other.md must NOT trigger Cursor regeneration."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Create unrelated cursor file — not a Cypilot-generated file
+            unrelated = root / ".cursor" / "commands" / "other.md"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("# unrelated tool command", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("cursor", result)
+
+    def test_unrelated_github_prompts_does_not_trigger(self):
+        """Unrelated .github/prompts/unrelated.md must NOT trigger Copilot regeneration."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            unrelated = root / ".github" / "prompts" / "unrelated.prompt.md"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("# unrelated prompt", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("copilot", result)
+
+    def test_unrelated_windsurf_workflows_does_not_trigger(self):
+        """Unrelated .windsurf/workflows/other.md must NOT trigger Windsurf regeneration."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            unrelated = root / ".windsurf" / "workflows" / "other.md"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("# unrelated workflow", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("windsurf", result)
+
+    def test_legacy_openai_with_shared_skill_only(self):
+        """Legacy OpenAI install with only .agents/skills/cypilot/SKILL.md is detected."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Simulate legacy OpenAI: only shared skill, no .codex/ marker
+            agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+            agents_skill.parent.mkdir(parents=True, exist_ok=True)
+            agents_skill.write_text("old", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("openai", result)
+
+    def test_shared_skill_with_cursor_does_not_trigger_openai(self):
+        """When cursor marker exists alongside shared skill, OpenAI must NOT be detected."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Shared skill + cursor-specific marker
+            agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+            agents_skill.parent.mkdir(parents=True, exist_ok=True)
+            agents_skill.write_text("old", encoding="utf-8")
+            cursor_cmd = root / ".cursor" / "commands" / "cypilot.md"
+            cursor_cmd.parent.mkdir(parents=True)
+            cursor_cmd.write_text("old", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("cursor", result)
+            self.assertNotIn("openai", result)
+
+    def test_copilot_detected_via_cypilot_installed_marker(self):
+        """Copilot is detected via .github/.cypilot-installed marker."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            marker = root / ".github" / ".cypilot-installed"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("# Cypilot Copilot integration marker\n", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("copilot", result)
+
+    def test_legacy_copilot_detected_via_managed_instructions(self):
+        """Legacy Copilot install detected via Cypilot-managed copilot-instructions.md."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Cypilot-managed legacy file (starts with "# Cypilot")
+            instructions = root / ".github" / "copilot-instructions.md"
+            instructions.parent.mkdir(parents=True, exist_ok=True)
+            instructions.write_text("# Cypilot\n\nManaged content.\n", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("copilot", result)
+
+    def test_user_copilot_instructions_does_not_trigger_detection(self):
+        """User-authored .github/copilot-instructions.md must NOT trigger Copilot detection."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # User's own copilot-instructions.md without Cypilot marker
+            instructions = root / ".github" / "copilot-instructions.md"
+            instructions.parent.mkdir(parents=True, exist_ok=True)
+            instructions.write_text("# My project\nUse TypeScript.\n", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("copilot", result)
+
+    def test_mixed_openai_with_cypilot_codex_agents_detected(self):
+        """Legacy OpenAI with Cypilot-generated .codex/agents/ content is detected."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Mixed install: cursor marker + .codex/agents/ with Cypilot-generated toml
+            cursor_cmd = root / ".cursor" / "commands" / "cypilot.md"
+            cursor_cmd.parent.mkdir(parents=True)
+            cursor_cmd.write_text("old", encoding="utf-8")
+            codex_agent = root / ".codex" / "agents" / "cypilot-ralphex.toml"
+            codex_agent.parent.mkdir(parents=True, exist_ok=True)
+            codex_agent.write_text(
+                'name = "cypilot-ralphex"\n'
+                'developer_instructions = """\n'
+                'ALWAYS open and follow `{cypilot_path}/.core/prompts/ralphex.md`\n'
+                '"""\n',
+                encoding="utf-8",
+            )
+
+            _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            # OpenAI detected and auto-migrated: primary marker created
+            marker = root / ".codex" / ".cypilot-installed"
+            self.assertTrue(marker.exists(),
+                ".codex/.cypilot-installed must be auto-created for legacy OpenAI")
+
+    def test_non_cypilot_codex_agents_does_not_trigger_openai(self):
+        """Arbitrary .codex/agents/ content (not Cypilot-generated) must NOT trigger OpenAI."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # .codex/agents/ with user-created toml (no Cypilot marker)
+            codex_agent = root / ".codex" / "agents" / "custom.toml"
+            codex_agent.parent.mkdir(parents=True, exist_ok=True)
+            codex_agent.write_text('name = "custom"\ndescription = "My agent"\n', encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("openai", result)
+
+    def test_bare_codex_dir_does_not_trigger_openai(self):
+        """An empty .codex/ directory must NOT trigger OpenAI detection."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # Bare .codex/agents/ directory with no content
+            codex_dir = root / ".codex" / "agents"
+            codex_dir.mkdir(parents=True, exist_ok=True)
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertNotIn("openai", result)
+
+    def test_legacy_windsurf_skill_triggers_regeneration(self):
+        """Legacy .windsurf/skills/cypilot/SKILL.md with Cypilot content triggers regeneration."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            legacy = root / ".windsurf" / "skills" / "cypilot" / "SKILL.md"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text("ALWAYS open and follow `{cypilot_path}/.core/skills/cypilot/SKILL.md`\n")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("windsurf", result)
+
+    def test_legacy_cursor_rules_triggers_regeneration(self):
+        """Legacy .cursor/rules/cypilot.mdc with Cypilot content triggers regeneration."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            legacy = root / ".cursor" / "rules" / "cypilot.mdc"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text("ALWAYS open and follow `{cypilot_path}/.core/skills/cypilot/SKILL.md`\n")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("cursor", result)
+
+    def test_copilot_detected_via_prompt_file_in_update(self):
+        """Copilot with user-authored instructions but existing prompt file is detectable."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            # User-authored copilot-instructions.md (not Cypilot-managed)
+            instructions = root / ".github" / "copilot-instructions.md"
+            instructions.parent.mkdir(parents=True, exist_ok=True)
+            instructions.write_text("# My project\nUse TypeScript.\n", encoding="utf-8")
+            # But Cypilot prompt file exists
+            prompt = root / ".github" / "prompts" / "cypilot.prompt.md"
+            prompt.parent.mkdir(parents=True, exist_ok=True)
+            prompt.write_text("---\nname: cypilot\n---\nALWAYS open and follow ...\n")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("copilot", result)
+
+    def test_shared_skill_with_legacy_copilot_prompt_does_not_trigger_openai(self):
+        """Legacy Copilot prompt fallback must suppress OpenAI shared-skill detection."""
+        from cypilot.commands.update import _maybe_regenerate_agents
+        with TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            root.mkdir()
+            (root / ".git").mkdir()
+            cache = Path(td) / "cache"
+            cypilot_dir = self._make_project_with_agents(root, cache)
+
+            agents_skill = root / ".agents" / "skills" / "cypilot" / "SKILL.md"
+            agents_skill.parent.mkdir(parents=True, exist_ok=True)
+            agents_skill.write_text("old", encoding="utf-8")
+            prompt = root / ".github" / "prompts" / "cypilot.prompt.md"
+            prompt.parent.mkdir(parents=True, exist_ok=True)
+            prompt.write_text("---\nname: cypilot\n---\nALWAYS open and follow ...\n", encoding="utf-8")
+
+            result = _maybe_regenerate_agents(
+                {"skills": "updated"}, {}, root, cypilot_dir,
+            )
+            self.assertIn("copilot", result)
+            self.assertNotIn("openai", result)
 
 
 class TestHumanUpdateOk(unittest.TestCase):

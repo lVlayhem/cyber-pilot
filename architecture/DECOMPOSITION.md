@@ -297,7 +297,9 @@ Cypilot DESIGN is decomposed into features organized around architectural layers
   - `cpt-cypilot-seq-generate-workflow`
 
 - **Data**:
-  - `.windsurf/workflows/`, `.cursor/rules/`, `.claude/commands/`, `.github/prompts/`
+  - Workflow entry points: `.windsurf/workflows/`, `.cursor/commands/`, `.claude/commands/`, `.github/prompts/`
+  - Shared skill stubs (non-Claude): `.agents/skills/`
+  - Agent-specific subagents: `.cursor/agents/`, `.claude/agents/`, `.github/agents/`, `.codex/agents/`
 
 
 ### 2.6 PR Workflows (EXTRACTED) ⏳ MEDIUM
