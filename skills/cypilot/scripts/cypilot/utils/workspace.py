@@ -165,9 +165,11 @@ class ValidationConfig:
 
         [validation]
         allowed_content_languages = ["en"]
+        ignore_paths = ["translations/**/*.md", "vendor/**/*.md"]
     """
 
     allowed_content_languages: List[str] = field(default_factory=list)
+    ignore_paths: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ValidationConfig":
@@ -176,12 +178,17 @@ class ValidationConfig:
             langs = [str(x).strip().lower() for x in raw if str(x).strip()]
         else:
             langs = []
-        return cls(allowed_content_languages=langs)
+        raw_ignore = (data or {}).get("ignore_paths", [])
+        ignore = list(raw_ignore) if isinstance(raw_ignore, list) else []
+        return cls(allowed_content_languages=langs, ignore_paths=ignore)
 
     def to_dict(self) -> dict:
-        if not self.allowed_content_languages:
-            return {}
-        return {"allowed_content_languages": list(self.allowed_content_languages)}
+        result: dict = {}
+        if self.allowed_content_languages:
+            result["allowed_content_languages"] = list(self.allowed_content_languages)
+        if self.ignore_paths:
+            result["ignore_paths"] = list(self.ignore_paths)
+        return result
 
 
 # @cpt-begin:cpt-cypilot-algo-workspace-find-config:p1:inst-find-config-datamodel

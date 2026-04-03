@@ -48,6 +48,14 @@ def cmd_check_language(argv: List[str]) -> int:
         action="store_true",
         help="Suppress summary header; show violations only.",
     )
+    p.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Glob pattern of files to skip (e.g. 'translations/**/*.md'). "
+             "Can be repeated. Also reads ignore_paths from workspace config.",
+    )
     args = p.parse_args(argv)
 
     from ..utils.content_language import (
@@ -78,6 +86,14 @@ def cmd_check_language(argv: List[str]) -> int:
             ui.result({"status": "ERROR", "message": str(exc)})
             return 1
 
+    # ── Resolve ignore patterns ──────────────────────────────────────────────
+    ignore_patterns: List[str] = list(args.ignore)
+    try:
+        ignore_patterns.extend(_read_config_ignore_patterns())
+    except ValueError as exc:
+        ui.result({"status": "ERROR", "message": str(exc)})
+        return 1
+
     # ── Resolve scan roots ───────────────────────────────────────────────────
     if args.paths:
         roots = [Path(pth) for pth in args.paths]
@@ -95,7 +111,7 @@ def cmd_check_language(argv: List[str]) -> int:
     # ── Scan ─────────────────────────────────────────────────────────────────
     allowed_ranges = build_allowed_ranges(allowed_langs)
     try:
-        violations = scan_paths(roots, allowed_ranges)
+        violations = scan_paths(roots, allowed_ranges, ignore_patterns=ignore_patterns)
     except LangScanError as exc:
         ui.result({"status": "ERROR", "message": str(exc)})
         return 1
@@ -166,6 +182,29 @@ def _read_config_languages() -> List[str]:
         if langs:
             return langs
     return ["en"]
+
+
+def _read_config_ignore_patterns() -> List[str]:
+    """Read ignore_paths glob patterns from workspace config.
+
+    Returns an empty list when the workspace config is absent or has no
+    ignore_paths setting.  Raises ValueError if the config file cannot be
+    parsed.
+    """
+    from ..utils.context import get_context
+    from ..utils.workspace import find_workspace_config
+
+    ctx = get_context()
+    if ctx is None:
+        return []
+    _ws_cfg, _ws_err = find_workspace_config(ctx.project_root)
+    if _ws_err:
+        raise ValueError(f"Workspace config error: {_ws_err}")
+    if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
+        patterns = getattr(_ws_cfg.validation, "ignore_paths", None)
+        if patterns:
+            return list(patterns)
+    return []
 
 
 def _default_roots() -> List[Path]:

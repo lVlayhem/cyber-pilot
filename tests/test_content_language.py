@@ -60,6 +60,29 @@ class TestBuildAllowedRanges(unittest.TestCase):
         starts = [r[0] for r in ranges]
         self.assertEqual(starts, sorted(starts))
 
+    def test_ranges_are_non_overlapping_after_merge(self):
+        """No two intervals in the result should overlap."""
+        ranges = build_allowed_ranges(["en", "ru", "ar", "zh"])
+        for i in range(len(ranges) - 1):
+            self.assertLess(
+                ranges[i][1], ranges[i + 1][0],
+                f"Overlap between {ranges[i]} and {ranges[i+1]}",
+            )
+
+    def test_overlapping_inner_range_does_not_cause_false_negative(self):
+        """A code point inside the outer range but above the inner range must be allowed.
+
+        0x200B-0x200F is nested inside 0x2000-0x206F in _COMMON_RANGES.
+        Before merging, binary search could land on (0x200B, 0x200F) and
+        wrongly reject 0x2010 (HYPHEN, inside the outer range).
+        After merging both collapse to (0x2000, 0x206F) so 0x2010 is allowed.
+        """
+        ranges = build_allowed_ranges(["en"])
+        self.assertTrue(
+            is_allowed(0x2010, ranges),  # HYPHEN — inside 0x2000-0x206F
+            "0x2010 should be allowed by the merged General Punctuation range",
+        )
+
     def test_case_insensitive_lang_code(self):
         ranges_lower = build_allowed_ranges(["ru"])
         ranges_upper = build_allowed_ranges(["RU"])
@@ -291,6 +314,25 @@ class TestScanPaths(unittest.TestCase):
         p1 = self._write("one.md", "Привет\n")
         p2 = self._write("two.md", "English\n")
         violations = scan_paths([p1, p2], self.ranges)
+        self.assertEqual(len(violations), 1)
+
+    def test_ignore_pattern_skips_file(self):
+        """Files matching ignore_patterns are not scanned."""
+        p = self._write("translations/ru.md", "Привет\n")
+        violations = scan_paths([self.root], self.ranges, ignore_patterns=["*/translations/*"])
+        self.assertEqual(violations, [])
+
+    def test_ignore_pattern_does_not_skip_other_files(self):
+        """Only matching files are skipped; others are still scanned."""
+        self._write("translations/ru.md", "Привет\n")
+        self._write("docs/guide.md", "Привет\n")
+        violations = scan_paths([self.root], self.ranges, ignore_patterns=["*/translations/*"])
+        self.assertEqual(len(violations), 1)
+        self.assertIn("guide.md", str(violations[0].path))
+
+    def test_ignore_pattern_empty_list_scans_all(self):
+        p = self._write("doc.md", "Привет\n")
+        violations = scan_paths([p], self.ranges, ignore_patterns=[])
         self.assertEqual(len(violations), 1)
 
 

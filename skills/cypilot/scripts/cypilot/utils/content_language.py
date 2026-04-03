@@ -171,8 +171,28 @@ class LangViolation:
 # ---------------------------------------------------------------------------
 # @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-range-helpers
 
+def _merge_ranges(ranges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """Sort and merge overlapping or adjacent intervals.
+
+    Required so that binary search in is_allowed() works correctly when
+    ranges from different language tables overlap or are adjacent.
+    """
+    if not ranges:
+        return []
+    sorted_r = sorted(ranges, key=lambda r: r[0])
+    merged: List[Tuple[int, int]] = [sorted_r[0]]
+    for start, end in sorted_r[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end + 1:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def build_allowed_ranges(languages: List[str]) -> List[Tuple[int, int]]:
-    """Merge Unicode ranges for all given language codes into a sorted list.
+    """Merge Unicode ranges for all given language codes into a sorted,
+    non-overlapping list suitable for binary search via is_allowed().
 
     Unknown language codes are silently ignored — callers should validate
     against SUPPORTED_LANGUAGES before calling if they need strict checking.
@@ -180,7 +200,7 @@ def build_allowed_ranges(languages: List[str]) -> List[Tuple[int, int]]:
     ranges: List[Tuple[int, int]] = list(_COMMON_RANGES)
     for lang in languages:
         ranges.extend(SCRIPT_RANGES.get(lang.lower(), []))
-    return sorted(ranges, key=lambda r: r[0])
+    return _merge_ranges(ranges)
 
 
 def is_allowed(cp: int, ranges: List[Tuple[int, int]]) -> bool:
@@ -252,24 +272,34 @@ def scan_paths(
     roots: List[Path],
     allowed_ranges: List[Tuple[int, int]],
     extensions: Optional[List[str]] = None,
+    ignore_patterns: Optional[List[str]] = None,
 ) -> List[LangViolation]:
     """Recursively scan files under the given paths and return all violations.
 
     Only files whose extensions appear in *extensions* are scanned (default:
-    ``[".md"]``).
+    ``[".md"]``).  Files whose path matches any glob in *ignore_patterns*
+    (matched against the absolute path string) are skipped — useful for
+    translation specs, language-processor test fixtures, or vendor docs.
     """
+    import fnmatch
+
     if extensions is None:
         extensions = [".md"]
     ext_set = {e.lower() for e in extensions}
+    ignore_list = list(ignore_patterns) if ignore_patterns else []
     all_violations: List[LangViolation] = []
+
+    def _is_ignored(file_path: Path) -> bool:
+        path_str = str(file_path)
+        return any(fnmatch.fnmatch(path_str, pat) for pat in ignore_list)
 
     for root in roots:
         if root.is_file():
-            if root.suffix.lower() in ext_set:
+            if root.suffix.lower() in ext_set and not _is_ignored(root):
                 all_violations.extend(scan_file(root, allowed_ranges))
         elif root.is_dir():
             for file_path in sorted(root.rglob("*")):
-                if file_path.suffix.lower() in ext_set:
+                if file_path.suffix.lower() in ext_set and not _is_ignored(file_path):
                     all_violations.extend(scan_file(file_path, allowed_ranges))
 
     return all_violations
