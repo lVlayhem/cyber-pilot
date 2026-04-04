@@ -12,11 +12,11 @@
 
 **Status**: Active
 
-**Audience**: Developers using AI coding assistants, technical leads, engineering teams
+**Audience**: Developers using AI coding tools, technical leads, engineering teams
 
 ## Cyber Pilot — tooling for traceable, reviewable AI-assisted software changes
 
-It adds bounded phases, stable identifiers, and verifiable checks to AI-assisted work that has outgrown a single chat. It is **not** another coding model, IDE, or AI host.
+It adds bounded phases, stable identifiers, and verifiable checks to AI-assisted work that has outgrown a single chat. It is **not** another coding model, IDE, or AI coding tool.
 
 It works alongside tools such as Claude Code, Cursor, GitHub Copilot, OpenAI Codex, and Windsurf to keep larger changes reviewable and traceable to approved requirements and design.
 
@@ -32,7 +32,7 @@ The model itself is still **non-deterministic**. Cyber Pilot does not try to cha
 
 ### Who this is for
 
-Use Cyber Pilot if you already work with an AI coding assistant and need more control over larger or riskier work.
+Use Cyber Pilot if you already work with an AI coding tool and need more control over larger or riskier work.
 
 - **Engineers** — to keep larger changes bounded, reviewable, and easier to continue safely
 - **Tech leads and architects** — to reduce drift between approved requirements, design, and implementation
@@ -65,7 +65,7 @@ Cyber Pilot is strongest when an early idea or PoC needs to become a production-
 
 A typical path is: approve the requirement and design, split the change into bounded phases, implement one phase at a time, review each phase against the same identifiers, then verify before merge that the shipped code still traces back to the approved requirement, design, and tasks.
 
-> **Convention**: 💬 = paste into AI agent chat. 🖥️ = run in terminal.
+> **Convention**: 💬 = paste into AI coding tool chat. 🖥️ = run in terminal.
 
 ---
 
@@ -109,7 +109,7 @@ For a first trial, you need Python 3.11+, Git, and one supported AI coding tool 
 
 `pipx` is recommended for installing the CLI globally. `gh` is optional for PR review and PR status workflows.
 
-**Prefer to skim?** Jump to [Quick start](#quick-start), [What success looks like after 5 minutes](#5-what-success-looks-like-after-5-minutes), or [Host support at a glance](#host-support-at-a-glance).
+**Prefer to skim?** Jump to [Quick start](#quick-start), [What success looks like after 5 minutes](#5-what-success-looks-like-after-5-minutes), or [AI coding tool support at a glance](#ai-coding-tool-support-at-a-glance).
 
 ---
 
@@ -119,7 +119,7 @@ Goal: get Cyber Pilot working in your repository and produce one concrete result
 
 Cyber Pilot is the product.
 Use 🖥️ `cpt` in your terminal for repo setup.
-Use 💬 `cypilot ...` in your AI tool chat for workflows in that same repository.
+Use 💬 `cypilot ...` in your AI coding tool chat for workflows in that same repository.
 Do **not** run 💬 `cypilot ...` in the terminal.
 The generated setup folder is `cypilot/` by default, but you can choose a different name such as `.cpt/` during init.
 
@@ -185,27 +185,27 @@ cpt generate-agents
 🖥️ `cpt init` is interactive. For a first trial, you can usually accept the default project root, keep the default setup directory unless you want a custom one, and accept the default SDLC kit if prompted.
 
 🖥️ `cpt init` sets up Cyber Pilot in your repository.
-🖥️ `cpt generate-agents` adds the AI-tool integration files for this repository.
+🖥️ `cpt generate-agents` adds the AI coding tool integration files for this repository.
 
 🖥️ `cpt generate-agents` may preview the files it will create and ask you to confirm before writing them.
 
-After this step, your repository should contain a new Cyber Pilot setup folder such as `cypilot/` or `.cpt/`, plus generated AI-tool integration files. You may also see host-specific folders such as `.windsurf/`, `.cursor/`, `.claude/`, `.github/`, `.codex/`, or `.agents/`, but you do not need to open or edit them for this trial.
+After this step, your repository should contain a new Cyber Pilot setup folder such as `cypilot/` or `.cpt/`, plus generated AI coding tool integration files. You may also see host-specific folders such as `.windsurf/`, `.cursor/`, `.claude/`, `.github/`, `.codex/`, or `.agents/`, but you do not need to open or edit them for this trial.
 
-If your AI tool is already open, reload the repository before continuing to step 3.
+If your AI coding tool is already open, reload the repository before continuing to step 3.
 
-#### 3. Turn on Cyber Pilot in your AI tool
+#### 3. Turn on Cyber Pilot in your AI coding tool
 
-In the AI tool chat attached to the same repository or workspace you just initialized, run:
+In the AI coding tool chat attached to the same repository or workspace you just initialized, run:
 
 In some hosts, you may also see a generated `cypilot` command or `/cypilot-...` entrypoint in the chat UI. The portable default in this README remains 💬 `cypilot ...`.
 
-💬 **AI agent chat**:
+💬 **AI coding tool chat**:
 
 ```text
 cypilot on
 ```
 
-If setup worked, the chat should end with a clear activation confirmation such as `Cypilot Mode Enabled`. If the chat replies like a normal assistant and does not confirm Cyber Pilot mode, activation did not happen; reopen the repository in the AI tool and try again. Some hosts may also show the resolved Cypilot path or loaded context.
+If setup worked, the chat should end with a clear activation confirmation such as `Cypilot Mode Enabled`. If the chat replies like a normal assistant and does not confirm Cyber Pilot mode, activation did not happen; reopen the repository in the AI coding tool and try again. Some hosts may also show the resolved Cypilot path or loaded context.
 
 #### 4. For your first 5-minute trial, start with `analyze` or `plan`
 
@@ -217,7 +217,7 @@ For this trial, use one small real input only: paste 5-15 lines of a requirement
 
 **Analyze**
 
-💬 **AI agent chat**:
+💬 **AI coding tool chat**:
 
 ```text
 cypilot analyze: review the pasted requirement, the attached note, or docs/requirements.md. List the top 5 unclear, missing, or conflicting points, then end with the 3 questions that must be answered before implementation
@@ -225,7 +225,7 @@ cypilot analyze: review the pasted requirement, the attached note, or docs/requi
 
 **Plan**
 
-💬 **AI agent chat**:
+💬 **AI coding tool chat**:
 
 ```text
 cypilot plan: using the pasted change request, the attached note, or docs/change-request.md, break this work into 3-7 small reviewable phases. For each phase, give the goal, likely files affected, and the main risk
@@ -237,28 +237,28 @@ Skip 💬 `cypilot generate: ...` for your first 5-minute trial. Use it later, a
 
 After 5 minutes, success means you have both:
 
-- a clear activation confirmation from 💬 `cypilot on`, such as `Cypilot Mode Enabled`
+- a clear activation confirmation from `cypilot on`, such as `Cypilot Mode Enabled`
 - one useful result you could act on immediately: either a numbered list of real gaps or blocking questions, or a phased implementation plan
 
 The new setup folder and generated integration files are only a secondary sanity check. The goal is a useful result, not setup artifacts.
 
 You can defer generated files, host-specific integration details, and advanced setup until later.
 
-### Host support at a glance
+### AI coding tool support at a glance
 
-Cypilot works across multiple AI hosts, but not all hosts expose the same control surfaces.
+Cypilot works across multiple AI coding tools, but some hosts support its structured workflows more fully than others.
 
 | Host | Best first use | Notes |
 |---|---|---|
-| Claude Code | Full Cypilot experience | Best support for subagents, isolation, and generation/review separation |
-| Cursor | Strong daily-driver IDE | Good general-purpose choice, especially if you want multi-model use |
-| GitHub Copilot | Structured assistance and review | Works well, but host-level control is less expressive than Claude Code |
-| OpenAI Codex | Bounded analysis and review | Best when tasks stay narrow and validation is explicit |
-| Windsurf | Manual separation with Cypilot workflows | Works without subagents; use separate chats for generation and review |
+| Claude Code | Best starting point for full workflow support | Strongest support for isolated task flow, subagents, and separate generation/review passes |
+| Cursor | Good editor-first starting point | Strong everyday IDE choice, with a smoother general workflow than the more orchestration-heavy hosts |
+| GitHub Copilot | Good for familiar editor and GitHub-centered workflows | Supports structured Cypilot use, but with less control over task orchestration than Claude Code |
+| OpenAI Codex | Best for narrow, well-scoped tasks | Works best when task boundaries are tight and validation steps are clearly specified |
+| Windsurf | Usable with manual workflow discipline | Works without subagents, but you should separate generation and review into different chats |
 
-If you are unsure where to start, **Claude Code** is currently the strongest first experience.
+If you are unsure where to start, **Claude Code** currently gives the clearest first experience for the full Cypilot workflow.
 
-For a full support matrix, host-specific guidance, and practical tradeoffs, use **[guides/AGENT-TOOLS.md](guides/AGENT-TOOLS.md)**.
+For host-specific setup guidance, deeper tradeoffs, and the full support matrix, use **[guides/AGENT-TOOLS.md](guides/AGENT-TOOLS.md)**.
 
 ---
 
@@ -266,7 +266,7 @@ For a full support matrix, host-specific guidance, and practical tradeoffs, use 
 
 ### Command surfaces at a glance
 
-The most important thing for a user is that Cypilot adds the **`cypilot` skill** to your AI host.
+The most important thing for a user is that Cypilot adds the **`cypilot` skill** to your AI coding tool.
 
 | Surface | Form | Role |
 |---|---|---|
@@ -278,7 +278,7 @@ If you are unsure what to use in chat, start with the `cypilot` skill and write 
 
 ### How to think about Cypilot
 
-Cypilot is best understood as a **deterministic layer around your existing AI tools and workflow**.
+Cypilot is best understood as a **deterministic layer around your existing AI coding tools and workflow**.
 
 - **Use the LLM for**
   - reasoning
@@ -413,7 +413,7 @@ RalphEx support is optional.
 
 When available, Cyber Pilot can delegate execution through the dedicated `cypilot-ralphex` path.
 
-Use this when you want bounded execution handoff with supervision rather than only interactive use inside the current host.
+Use this when you want bounded execution handoff with supervision rather than only interactive use inside the current AI coding tool.
 
 For when to delegate and how human review fits, see **[guides/BEST-PRACTICES.md](guides/BEST-PRACTICES.md)**.
 
@@ -424,7 +424,7 @@ Cypilot supports **project-level extensibility**, not just installable kits.
 At a high level, 🖥️ `cpt generate-agents` can discover and merge project-defined:
 
 - **skills**
-- **agents / subagents**
+- **subagents**
 - **workflows**
 - **rules**
 
@@ -436,9 +436,9 @@ For the full manifest model, includes semantics, layer resolution rules, orchest
 
 ### FAQ
 
-- **Is Cypilot a replacement for Claude Code, Cursor, Copilot, or another AI host?**
+- **Is Cypilot a replacement for Claude Code, Cursor, Copilot, or another AI coding tool?**
 
-  No. Cypilot sits on top of those hosts and adds routing, context loading, validation, and traceability.
+  No. Cypilot sits on top of those AI coding tools and adds routing, context loading, validation, and traceability.
 
 - **When is Cypilot clearly a good fit?**
 
@@ -543,7 +543,7 @@ The most useful issue reports usually include:
 - **Affected file, workflow, script, or command**
 - **Expected vs actual behavior**
 - **Evidence** such as logs, validator output, screenshots, or minimal prompt slices
-- **Environment details** such as OS, host tool, model, and Cypilot version if known
+- **Environment details** such as OS, AI coding tool, model, and Cypilot version if known
 
 ---
 
