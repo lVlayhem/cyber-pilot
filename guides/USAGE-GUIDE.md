@@ -9,19 +9,20 @@ How to use **Cypilot** well in common real-world situations: when to use it, whe
 ## Table of Contents
 
 - [1. What this guide is for](#1-what-this-guide-is-for)
-- [2. The shortest mental model](#2-the-shortest-mental-model)
-- [3. When Cypilot is a good fit](#3-when-cypilot-is-a-good-fit)
-- [4. When Cypilot is not the best first move](#4-when-cypilot-is-not-the-best-first-move)
-- [5. Choosing the right workflow](#5-choosing-the-right-workflow)
-- [6. Practical usage habits](#6-practical-usage-habits)
-- [7. Common mistakes and anti-patterns](#7-common-mistakes-and-anti-patterns)
-- [8. Situation-by-situation guidance](#8-situation-by-situation-guidance)
-- [9. Prompt patterns that usually work well](#9-prompt-patterns-that-usually-work-well)
-- [10. Prompt patterns that usually go wrong](#10-prompt-patterns-that-usually-go-wrong)
-- [11. Using Cyber Pilot across multiple repositories](#11-using-cyber-pilot-across-multiple-repositories)
-- [12. Brownfield projects](#12-brownfield-projects)
-- [13. Delegation and autonomous execution](#13-delegation-and-autonomous-execution)
-- [14. Quick decision checklist](#14-quick-decision-checklist)
+- [2. Installation and first-time setup](#2-installation-and-first-time-setup)
+- [3. The shortest mental model](#3-the-shortest-mental-model)
+- [4. When Cypilot is a good fit](#4-when-cypilot-is-a-good-fit)
+- [5. When Cypilot is not the best first move](#5-when-cypilot-is-not-the-best-first-move)
+- [6. Choosing the right workflow](#6-choosing-the-right-workflow)
+- [7. Practical usage habits](#7-practical-usage-habits)
+- [8. Common mistakes and anti-patterns](#8-common-mistakes-and-anti-patterns)
+- [9. Situation-by-situation guidance](#9-situation-by-situation-guidance)
+- [10. Prompt patterns that usually work well](#10-prompt-patterns-that-usually-work-well)
+- [11. Prompt patterns that usually go wrong](#11-prompt-patterns-that-usually-go-wrong)
+- [12. Using Cyber Pilot across multiple repositories](#12-using-cyber-pilot-across-multiple-repositories)
+- [13. Brownfield projects](#13-brownfield-projects)
+- [14. Delegation and autonomous execution](#14-delegation-and-autonomous-execution)
+- [15. Quick decision checklist](#15-quick-decision-checklist)
 - [Further reading](#further-reading)
 
 ---
@@ -42,9 +43,168 @@ The focus is not abstract theory.
 
 The focus is operational behavior: how to use Cypilot well in real projects.
 
+## 2. Installation and first-time setup
+
+If you need the exact setup path, complete this once before the rest of the guide.
+
+### One easy operating rule
+
+- use `cpt` in your terminal for setup, validation, updates, and workspace commands
+- use `cypilot ...` in your AI coding tool chat for `plan`, `generate`, and `analyze`
+- do **not** run `cypilot ...` in the terminal
+- the portable `cypilot <workflow>: ...` form is the best default; host-specific slash commands are aliases when a host exposes them
+
+### Prerequisites
+
+- Python 3.11+
+- Git
+- one supported AI coding tool
+- `pipx` for a global CLI install
+- `gh` if you want PR review or PR status workflows
+
+### 1. Install the CLI
+
+🖥️ **Terminal**:
+```bash
+pipx install git+https://github.com/cyberfabric/cyber-pilot.git
+cpt --version
+```
+
+If `cpt --version` prints a version, the CLI install worked.
+
+If `cpt` is not found, open a new terminal and try again before doing anything else.
+
+**Only if needed on macOS**
+
+Install `pipx` with **Homebrew**:
+
+🖥️ **Terminal**:
+```bash
+brew install pipx
+pipx ensurepath
+```
+
+Then open a new terminal, or reload the shell config that `pipx ensurepath` updated.
+
+For the default macOS `zsh` setup, that often means:
+
+🖥️ **Terminal**:
+```bash
+source ~/.zshrc
+```
+
+**Only if needed on Windows**
+
+Install `pipx` with **Scoop**:
+
+🖥️ **Terminal**:
+```bash
+scoop install pipx
+pipx ensurepath
+```
+
+Then open a new terminal so the updated `PATH` is picked up.
+
+### 2. Initialize the repository
+
+From your repository root, run:
+
+🖥️ **Terminal**:
+```bash
+cpt init
+cpt generate-agents
+```
+
+`cpt init` is interactive.
+
+For a first trial, it is usually safe to accept the default project root, keep the default setup directory unless you want a custom one, and accept the default SDLC kit if prompted.
+
+`cpt init` sets up Cyber Pilot in the repository.
+
+`cpt generate-agents` adds the AI coding tool integration files for that repository.
+
+`cpt generate-agents` may preview the files it will create and ask you to confirm before writing them.
+
+In a normal project, this creates a setup directory such as `cypilot/` or `.cpt/`, generated host integration files, and user-editable configuration under `config/` inside the chosen setup directory.
+
+You may also see host-specific folders such as `.windsurf/`, `.cursor/`, `.claude/`, `.github/`, `.codex/`, or `.agents/`.
+
+For a first trial, you do not need to open or edit those generated files manually.
+
+If your AI coding tool is already open on the repository, reload or reopen the repository after this step so the generated integration files are picked up.
+
+### 3. Turn Cyber Pilot on in chat
+
+In the AI coding tool chat attached to the same repository or workspace you just initialized, run:
+
+💬 **AI coding tool chat**:
+```text
+cypilot on
+```
+
+If setup worked, you should see a clear activation confirmation in chat. If the chat behaves like a normal assistant and does not confirm activation, reopen the repository in the AI coding tool and try again.
+
+Some hosts may also show the resolved Cyber Pilot path or loaded context.
+
+### Common install/setup failures
+
+- **`pipx: command not found`**
+  - Install `pipx`, then update `PATH`.
+  - macOS: `brew install pipx && pipx ensurepath`
+  - Windows: `scoop install pipx && pipx ensurepath`
+
+- **`cpt: command not found` after install**
+  - Open a new terminal first.
+  - On macOS `zsh`, run `source ~/.zshrc`.
+
+- **Setup ran in the wrong directory**
+  - Run `cpt init` from the repository root.
+
+- **You are not sure what to choose during `cpt init`**
+  - For a first trial, the default project root, default setup directory, and default SDLC kit are usually fine.
+
+- **`cpt generate-agents` looked like it stalled**
+  - It may be previewing generated files or waiting for confirmation before writing them.
+
+- **Generated files exist, but the AI coding tool still does not pick them up**
+  - Reload or reopen the repository in the AI coding tool.
+
+- **`cypilot on` behaves like a normal assistant reply**
+  - Make sure you opened the same repository you initialized.
+  - Make sure `cpt generate-agents` already ran.
+  - Then retry `cypilot on`.
+
+- **You expected slash commands, but only `cypilot ...` works**
+  - That is normal. `cypilot <workflow>: ...` is the portable default. Slash commands are host-specific aliases.
+
+- **Workspace-aware validation feels noisy on a first trial**
+  - Start with `cpt validate --local-only`.
+
+### 4. Pick the right first move
+
+- **First 5-minute trial**: start with `cypilot analyze: ...` or `cypilot plan: ...`, not `generate`
+- **New project or already-structured work**: start with `cypilot generate: ...` or `cypilot plan: ...`
+- **Existing codebase with weak or missing conventions**: run `cypilot auto-config`, inspect what it inferred, and refine the generated rules before large changes
+- **After changing workflows, kits, or host integrations**: rerun `cpt generate-agents` or `cpt generate-agents --agent <tool>`
+
+For the first trial, use one small real input only: one short requirement, one design note, or one focused change request. Do not start with a repo-wide review or a broad implementation request.
+
+Good first requests:
+
+- 💬 `cypilot analyze: review this requirement and list the top 5 unclear or missing points before implementation`
+- 💬 `cypilot plan: break this change request into 3-7 safe reviewable phases with the main risk in each phase`
+
+### What success looks like after the first few minutes
+
+- **Activation is confirmed** in the repository attached to the AI coding tool chat
+- **One useful result appears** such as a bounded plan, a short list of blocking questions, or a validation surface you can act on immediately
+- **The next step is clearer** than it was before activation
+
+For host-specific setup details and troubleshooting, use **[AGENT-TOOLS.md](AGENT-TOOLS.md)**.
+
 ---
 
-## 2. The shortest mental model
+## 3. The shortest mental model
 
 Cypilot is most useful when a task needs more than raw prompting.
 
@@ -68,9 +228,10 @@ If the task is tiny or exploratory, direct prompting may be enough.
 
 If the task needs structure, validation, or safe multi-step execution, Cypilot is usually the better fit.
 
+
 ---
 
-## 3. When Cypilot is a good fit
+## 4. When Cypilot is a good fit
 
 Cypilot is a strong fit when one or more of these are true:
 
@@ -106,9 +267,10 @@ Cypilot is a strong fit when one or more of these are true:
   
   Example: multiple engineers or AI coding tools should follow the same planning, validation, and review discipline.
 
+
 ---
 
-## 4. When Cypilot is not the best first move
+## 5. When Cypilot is not the best first move
 
 Cypilot is often not the best first move when:
 
@@ -146,9 +308,10 @@ It is the tradeoff of using a more structured system.
 
 For these cases, lighter approaches or direct prompting can be a better starting point.
 
+
 ---
 
-## 5. Choosing the right workflow
+## 6. Choosing the right workflow
 
 ### Use `plan` when
 
@@ -194,6 +357,18 @@ Why this matters:
 - planning makes instructions more stable
 - planning makes progress inspectable
 - planning turns long work into an operational sequence instead of one overloaded request
+
+### Best chat form
+
+Use the portable workflow form by default:
+
+- 💬 `cypilot plan: ...`
+- 💬 `cypilot generate: ...`
+- 💬 `cypilot analyze: ...`
+
+Some hosts also expose slash-command aliases such as `/cypilot-plan`, `/cypilot-generate`, or `/cypilot-analyze`.
+
+Treat those as host-specific aliases, not separate capabilities.
 
 **Good prompt shape**:
 
@@ -277,9 +452,10 @@ This loop improves quality, but it does **not** guarantee correctness.
 
 A final **human review is still required** before treating the result as done.
 
+
 ---
 
-## 6. Practical usage habits
+## 7. Practical usage habits
 
 1. **Start from a clear target**
    - Name the artifact, code area, workflow, or outcome.
@@ -316,9 +492,10 @@ For specialized work such as template/example synchronization or kit changes, in
 
 Use narrower checks while iterating and broader checks before merge. Let humans review meaning and tradeoffs, while CI enforces the deterministic rules every time.
 
+
 ---
 
-## 7. Common mistakes and anti-patterns
+## 8. Common mistakes and anti-patterns
 
 1. **Using Cyber Pilot like a generic chat tool**
    - That bypasses the workflows, structure, and validation that make it useful.
@@ -344,9 +521,10 @@ Use narrower checks while iterating and broader checks before merge. Let humans 
 8. **Reusing stale context across unrelated generation or review tasks**
    - Old context can leak assumptions into the next task. Start a new chat or clear the context first.
 
+
 ---
 
-## 8. Situation-by-situation guidance
+## 9. Situation-by-situation guidance
 
 ### Situation: new project setup
 
@@ -445,9 +623,10 @@ Use narrower checks while iterating and broader checks before merge. Let humans 
 - 💬 start a new chat before a new generation or review task
 - 💬 clear the chat context before the next task if you stay in the same session
 
+
 ---
 
-## 9. Prompt patterns that usually work well
+## 10. Prompt patterns that usually work well
 
 Examples that reference `PRD`, `DESIGN`, `DECOMPOSITION`, or `FEATURE` assume the SDLC kit is installed; otherwise substitute your own project artifact types.
 
@@ -480,9 +659,10 @@ Examples that reference `PRD`, `DESIGN`, `DECOMPOSITION`, or `FEATURE` assume th
 
 - 💬 `cypilot generate: add the missing @cpt-* markers to the code changed for this FEATURE and keep the implementation behavior unchanged`
 
+
 ---
 
-## 10. Prompt patterns that usually go wrong
+## 11. Prompt patterns that usually go wrong
 
 - 💬 `cypilot generate: build the whole system`
 - 💬 `cypilot generate: make this project enterprise grade`
@@ -507,9 +687,10 @@ Better versions:
 - Instead of `cypilot generate: rewrite the app based on best practices`: 💬 `cypilot analyze: find the three highest-risk design and implementation issues in this module`
 - Instead of `cypilot generate: implement this spec in code and treat the first pass as done without validation`: 💬 `cypilot generate: update only the login FEATURE spec using the approved auth DESIGN, then validate the result`
 
+
 ---
 
-## 11. Using Cyber Pilot across multiple repositories
+## 12. Using Cyber Pilot across multiple repositories
 
 If you work across several small repositories, avoid copying the full Cyber Pilot setup into each one.
 
@@ -540,9 +721,17 @@ cpt workspace-add --name services --path ../services-repo --role codebase
 cpt workspace-info
 ```
 
+Useful follow-up commands:
+
+- 🖥️ `cpt validate --local-only` — validate only the current repository when you want to skip cross-repo resolution
+- 🖥️ `cpt where-defined --id <id>` — find where an ID is defined across reachable workspace sources
+- 🖥️ `cpt list-ids --source <name>` — inspect IDs from one specific workspace source
+- 🖥️ `cpt workspace-sync` — refresh Git URL workspace sources when your workspace uses remote sources
+
+
 ---
 
-## 12. Brownfield projects
+## 13. Brownfield projects
 
 Here, "brownfield" means an existing system with partial docs, unclear conventions, or mixed quality.
 
@@ -570,15 +759,20 @@ Brownfield projects are often a strong Cypilot use case, but only if you are dis
 5. 💬 `cypilot analyze: summarize current conventions and likely architecture boundaries`
 6. 💬 `cypilot plan: break the requested change into safe brownfield phases`
 
+
 ---
 
-## 13. Delegation and autonomous execution
+## 14. Delegation and autonomous execution
 
 Delegation can be useful, but only when three things are clear:
 
 - the task is bounded
 - the validation loop is trustworthy enough to monitor
 - a human will still make the final acceptance decision
+
+It is usually **not** the right day-one path.
+
+Start with normal interactive `plan`, `generate`, and `analyze` use first. Add delegation later only when the workflow is already working well interactively.
 
 A delegated loop often looks like:
 
@@ -608,13 +802,22 @@ If validation produces a false positive, an autonomous loop can optimize for the
 - stop or roll back to a known-good point if the loop goes off track
 - require human review before treating the delegated result as done
 
+### Delegation preflight
+
+If your setup uses RalphEx-backed delegation, run a quick environment check before you rely on it:
+
+- 🖥️ `cpt doctor`
+
+Treat warnings or failures in that preflight as a reason to stay interactive until the delegation path is healthy.
+
 Even after a clean delegated loop, the result is still not automatically guaranteed correct.
 
 A final **human review remains mandatory**.
 
+
 ---
 
-## 14. Quick decision checklist
+## 15. Quick decision checklist
 
 Use Cypilot if most answers are **yes**:
 
