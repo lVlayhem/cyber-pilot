@@ -149,49 +149,55 @@ For teams already using an AI coding tool, Cyber Pilot provides the operating co
 
  ## Traceability and validation model
 
-Cyber Pilot is strongest when the delivery surface is explicit and checkable.
+ Cyber Pilot is strongest when the delivery surface is explicit and checkable.
 
-The inspectable surface is the repository material you can review directly. The configured enforcement surface is the subset of that material that the repository has chosen to make validator-visible to deterministic `cpt` checks.
+ The inspectable surface is the file-backed repository material a human can open, diff, review, and compare over time. The configured enforcement surface is the validator-visible subset of that material that the repository has explicitly chosen to subject to deterministic `cpt` checks.
 
-### Inspectable delivery surface
+ ### Inspectable delivery surface
 
-- **File-backed artifacts** keep requirements, design, plans, and implementation visible as inspectable delivery inputs and outputs.
-- **Stable identifiers and cross-links** connect those artifacts through one shared traceability surface.
-- **Templates, checklists, and file-backed plans** create review surfaces that can be inspected and repeated.
-- **Validation and review outputs** become visible evidence when the repository uses Cyber Pilot's traceability model.
-- **Drift signals** surface through broken links, failed checks, and missing required structure instead of being reconstructed ad hoc later.
+ - **File-backed artifacts** keep requirements, design, plans, and implementation visible as inspectable delivery inputs and outputs.
+ - **Stable identifiers and cross-links** connect those artifacts through one shared traceability surface.
+ - **Templates, checklists, and file-backed plans** create review surfaces that can be inspected, diffed, and repeated.
+ - **Validation and review outputs** become visible evidence alongside the work products they refer to.
+ - **Drift signals** become operationally visible through broken links, failed checks, and missing required structure instead of being reconstructed ad hoc later.
 
-### Configured enforcement surface
+ ### Configured enforcement surface
 
-- **Not every inspectable artifact is automatically enforced**; deterministic enforcement applies only to validator-visible material the repository has configured `cpt` to check.
-- **IDs, required links, document structure, plans, and stage completeness** become enforceable when they are part of that configured validation surface.
-- **The same configured surface can be checked locally and in CI** so enforcement is repeatable instead of chat-dependent.
+ - **Not every inspectable artifact is automatically enforced**; deterministic enforcement applies only to file-backed, validator-visible material the repository has configured `cpt` to check.
+ - **Enforceable means configured + validator-visible + deterministic** rather than inferred from everything a human can see in the repository.
+ - **IDs, required links, document structure, plans, and stage completeness** become enforceable when they are part of that configured validation surface.
+ - **The same configured surface can be checked locally and in CI** so enforcement is repeatable instead of chat-dependent.
 
-### Evidence chain across a change
+ ### Evidence chain across a change
 
-- **Requirement** captures the approved scope.
-- **Design** records the intended structure, constraints, or boundary decisions.
-- **Plan** breaks the change into bounded execution steps.
-- **Implementation** maps code changes back to that approved scope.
-- **Validation result** shows whether the configured structure, links, and review surfaces still hold.
+ - **Requirement** captures the approved scope.
+ - **Design** records the intended structure, constraints, or boundary decisions.
+ - **Plan** breaks the change into bounded execution steps.
+ - **Implementation** provides traceable linked evidence back to that approved scope.
+ - **Validation result** shows whether the configured structure, links, and review surfaces still hold.
 
-### What `cpt` enforces
+ The chain exists through explicit linked artifacts, stable identifiers or references, file-backed plans or checkpoints, and validation outputs tied to the configured surface. It helps surface drift and broken alignment operationally; it does not prove semantic equivalence between the requirement and the implementation.
 
-These are the main deterministic enforcement classes applied to that configured surface.
+ ### What `cpt` enforces
 
-- **Artifact and document structure** such as required shape, expected sections, and validator-visible files
-- **Identifier and reference integrity** across requirements, design, plans, code, and their cross-links
-- **Required links and traceability rules** that keep artifacts aligned through the same stable identifiers
-- **TOC and document consistency** where those checks are part of the configured validation surface
-- **Plan, checklist, and stage completeness** when the repository uses file-backed planning and review surfaces
-- **Repeatable local and CI validation outputs** for the same configured validation surface
+ These are the main deterministic conformance classes applied to that configured surface.
 
-### What Cyber Pilot cannot prove
+ - **Artifact and document structure** such as required shape, expected sections, and validator-visible files
+ - **Identifier and reference integrity** across requirements, design, plans, code, and their cross-links
+ - **Required links and traceability rules** that keep artifacts aligned through the same stable identifiers
+ - **TOC and document consistency** where those checks are part of the configured validation surface
+ - **Plan, checklist, and stage completeness** when those surfaces are file-backed and explicitly configured for checking
 
-- **Generation quality and implementation judgment** remain non-deterministic and still require review.
-- **Human approval decisions** remain judgment-based even when the artifacts, structure, and links are checkable.
+ ### What Cyber Pilot cannot prove
 
-## Workflow model
+ - **Behavioral correctness, absence of defects, and implementation quality** remain non-deterministic and still require review.
+ - **Soundness of design decisions and adequacy of tests** remain judgment-based even when the artifacts, structure, and links are checkable.
+ - **Business or product adequacy** remains outside deterministic proof.
+ - **Human approval, merge, and ship decisions** remain judgment-based even when the evidence surface is strong.
+
+ Cyber Pilot can surface missing, broken, stale, or inconsistent evidence without proving that the implementation is correct or adequate.
+
+ ## Workflow model
 
 Cyber Pilot has three core workflows. Each has a portable chat form and, in some hosts, a matching slash-command alias.
 
