@@ -3683,7 +3683,7 @@ class TestWorkspaceConfigValidationField:
     def _make_config(self, extra_toml: str = "") -> WorkspaceConfig:
         import tomllib as _toml
         raw = _toml.loads(
-            '[version]\nversion = "1.0"\n'
+            'version = "1.0"\n'
             "[sources.local]\npath = \".\"\nrole = \"full\"\n"
             + extra_toml
         )
