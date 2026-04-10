@@ -394,7 +394,7 @@ def cmd_validate(argv: List[str]) -> int:
     # Skipped if structure has already failed (all_errors non-empty) so language
     # issues never obscure structural errors.
     if not all_errors:
-        _lang_errs = _run_content_language_check(artifacts_to_validate, ws_ctx, project_root)
+        _lang_errs = _run_content_language_check(artifacts_to_validate, project_root)
         for _le in _lang_errs:
             all_errors.append(_le)
             _attach_issue_to_artifact_report(_le, is_error=True)
@@ -912,39 +912,57 @@ def _suggest_path_from_autodetect(node: object, target_kind: str) -> Optional[st
 
 def _run_content_language_check(
     artifacts_to_validate: list,
-    ws_ctx: object,
     project_root: "Path",
 ) -> list:
     """Return language-violation error dicts for all validated .md artifacts.
 
-    Uses ``ws_ctx.project_root`` when available, otherwise falls back to
-    ``project_root``, so the check works in both workspace mode and
-    single-repo mode.  Returns an empty list when
-    ``allowed_content_languages`` is not configured.  Returns a validation
-    error entry when the workspace config file exists but fails to load.
-    """
-    from ..utils.workspace import find_workspace_config as _find_ws
-    from ..utils.content_language import (
-        LangScanError as _LangScanError,
-        build_allowed_ranges,
-        scan_file as _scan_file,
-    )
-    from ..utils.constraints import error as _error
-    from ..utils import error_codes as _EC
+    Uses project_root to discover the workspace config so the check works in
+    both workspace mode and single-repo mode.  Returns an empty list when
+    allowed_content_languages is not configured.
 
-    root = getattr(ws_ctx, "project_root", None) or project_root
-    _ws_cfg, _ws_err = _find_ws(root)
-    if _ws_err is not None:
+    Config failures (malformed .cypilot-workspace.toml) are surfaced as
+    FILE_LOAD_ERROR entries rather than silently disabling validation.
+    """
+    try:
+        from ..utils.constraints import error as _error
+        from ..utils import error_codes as _EC
+    except ImportError:
+        return []
+
+    try:
+        from ..utils.workspace import find_workspace_config as _find_ws
+        _ws_cfg, _ws_err = _find_ws(project_root)
+    except (ImportError, OSError, AttributeError) as exc:
         return [_error(
-            "workspace",
-            f"Failed to load workspace config for language check: {_ws_err}",
-            path=root,
+            "language",
+            f"Cannot load workspace config for language check: {exc}",
+            path=project_root,
+            line=1,
             code=_EC.FILE_LOAD_ERROR,
         )]
+
+    if _ws_err:
+        return [_error(
+            "language",
+            f"Workspace config error, language validation skipped: {_ws_err}",
+            path=project_root,
+            line=1,
+            code=_EC.FILE_LOAD_ERROR,
+        )]
+
     if _ws_cfg is None or _ws_cfg.validation is None:
         return []
     allowed_langs = _ws_cfg.validation.allowed_content_languages
     if not allowed_langs:
+        return []
+
+    try:
+        from ..utils.content_language import (
+            LangScanError as _LangScanError,
+            build_allowed_ranges,
+            scan_file as _scan_file,
+        )
+    except ImportError:
         return []
 
     allowed_ranges = build_allowed_ranges(allowed_langs)
@@ -953,23 +971,22 @@ def _run_content_language_check(
         if artifact_path.suffix.lower() != ".md":
             continue
         try:
-            violations = _scan_file(artifact_path, allowed_ranges)
+            for v in _scan_file(artifact_path, allowed_ranges):
+                results.append(_error(
+                    "language",
+                    f"Non-allowed characters [{v.bad_chars_preview()}] — {v.line_preview()}",
+                    path=artifact_path,
+                    line=v.lineno,
+                    code=_EC.CONTENT_LANGUAGE_VIOLATION,
+                    allowed_languages=allowed_langs,
+                ))
         except _LangScanError as exc:
             results.append(_error(
                 "language",
-                f"Cannot read file for language scan: {exc}",
+                f"Cannot read file for language check: {exc.cause}",
                 path=artifact_path,
+                line=1,
                 code=_EC.FILE_READ_ERROR,
-            ))
-            continue
-        for v in violations:
-            results.append(_error(
-                "language",
-                f"Non-allowed characters [{v.bad_chars_preview()}] — {v.line_preview()}",
-                path=artifact_path,
-                line=v.lineno,
-                code=_EC.CONTENT_LANGUAGE_VIOLATION,
-                allowed_languages=allowed_langs,
             ))
     return results
 

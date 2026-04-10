@@ -1,13 +1,18 @@
-"""check-language command — scan Markdown artifacts for disallowed Unicode scripts."""
+"""check-language command — scan Markdown artifacts for disallowed Unicode scripts.
 
+@cpt-algo:cpt-cypilot-flow-traceability-validation-check-language:p1
+"""
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-check-lang-imports
 import argparse
 from pathlib import Path
 from typing import List
 
 from ..utils import error_codes as EC
 from ..utils.ui import ui
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-check-lang-imports
 
 
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-cmd-check-language
 def cmd_check_language(argv: List[str]) -> int:
     """Scan Markdown files for characters outside the allowed language set.
 
@@ -38,27 +43,24 @@ def cmd_check_language(argv: List[str]) -> int:
              "Overrides workspace config.",
     )
     p.add_argument(
-        "--exclude",
-        action="append",
-        default=[],
-        metavar="GLOB",
-        dest="exclude",
-        help=(
-            "Glob pattern for paths to skip (relative to each scan root). "
-            "Repeatable: --exclude 'translations/**' --exclude 'specs/i18n/*.md'. "
-            "Merged with check_language_ignore_paths from workspace config."
-        ),
-    )
-    p.add_argument(
         "--quiet",
         "-q",
         action="store_true",
         help="Suppress summary header; show violations only.",
     )
+    p.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Glob pattern of files to skip (e.g. 'translations/**/*.md'). "
+             "Can be repeated. Also reads ignore_paths from workspace config.",
+    )
     args = p.parse_args(argv)
 
     from ..utils.content_language import (
         SUPPORTED_LANGUAGES,
+        LangScanError,
         build_allowed_ranges,
         scan_paths,
     )
@@ -78,10 +80,19 @@ def cmd_check_language(argv: List[str]) -> int:
             return 1
         allowed_langs = raw_langs
     else:
-        allowed_langs = _read_config_languages()
+        try:
+            allowed_langs = _read_config_languages()
+        except ValueError as exc:
+            ui.result({"status": "ERROR", "message": str(exc)})
+            return 1
 
-    # ── Resolve ignore globs ─────────────────────────────────────────────────
-    ignore_globs: List[str] = list(args.exclude) + _read_config_ignore_paths()
+    # ── Resolve ignore patterns ──────────────────────────────────────────────
+    ignore_patterns: List[str] = list(args.ignore)
+    try:
+        ignore_patterns.extend(_read_config_ignore_patterns())
+    except ValueError as exc:
+        ui.result({"status": "ERROR", "message": str(exc)})
+        return 1
 
     # ── Resolve scan roots ───────────────────────────────────────────────────
     if args.paths:
@@ -99,14 +110,10 @@ def cmd_check_language(argv: List[str]) -> int:
 
     # ── Scan ─────────────────────────────────────────────────────────────────
     allowed_ranges = build_allowed_ranges(allowed_langs)
-    from ..utils.content_language import LangScanError
     try:
-        violations = scan_paths(roots, allowed_ranges, ignore_globs=ignore_globs or None)
+        violations = scan_paths(roots, allowed_ranges, ignore_patterns=ignore_patterns)
     except LangScanError as exc:
-        ui.result({
-            "status": "ERROR",
-            "message": str(exc),
-        })
+        ui.result({"status": "ERROR", "message": str(exc)})
         return 1
 
     files_scanned = _count_md_files(roots)
@@ -118,8 +125,6 @@ def cmd_check_language(argv: List[str]) -> int:
             "files_scanned": files_scanned,
             "violation_count": 0,
         }
-        if ignore_globs:
-            result["ignore_globs"] = ignore_globs
         ui.result(result, human_fn=lambda d: _human_result(d, quiet=args.quiet))
         return 0
 
@@ -147,51 +152,58 @@ def cmd_check_language(argv: List[str]) -> int:
         "file_count": len(by_file),
         "violations": violation_items,
     }
-    if ignore_globs:
-        result["ignore_globs"] = ignore_globs
     ui.result(result, human_fn=lambda d: _human_result(d, quiet=args.quiet))
     return 2
+
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-cmd-check-language
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-helpers
 
 def _read_config_languages() -> List[str]:
-    """Read allowed_content_languages from workspace config; fall back to ['en']."""
-    try:
-        from ..utils.context import get_context
-        from ..utils.workspace import find_workspace_config
+    """Read allowed_content_languages from workspace config; fall back to ['en'].
 
-        ctx = get_context()
-        if ctx is None:
-            return ["en"]
-        _ws_cfg, _ = find_workspace_config(ctx.project_root)
-        if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
-            langs = _ws_cfg.validation.allowed_content_languages  # type: ignore[union-attr]
-            if langs:
-                return langs
-    except Exception:
-        pass
+    Raises ValueError if the workspace config file exists but cannot be parsed.
+    """
+    from ..utils.context import get_context
+    from ..utils.workspace import find_workspace_config
+
+    ctx = get_context()
+    if ctx is None:
+        return ["en"]
+    _ws_cfg, _ws_err = find_workspace_config(ctx.project_root)
+    if _ws_err:
+        raise ValueError(f"Workspace config error: {_ws_err}")
+    if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
+        langs = _ws_cfg.validation.allowed_content_languages  # type: ignore[union-attr]
+        if langs:
+            return langs
     return ["en"]
 
 
-def _read_config_ignore_paths() -> List[str]:
-    """Read check_language_ignore_paths from workspace config; fall back to []."""
-    try:
-        from ..utils.context import get_context
-        from ..utils.workspace import find_workspace_config
+def _read_config_ignore_patterns() -> List[str]:
+    """Read ignore_paths glob patterns from workspace config.
 
-        ctx = get_context()
-        if ctx is None:
-            return []
-        _ws_cfg, _ = find_workspace_config(ctx.project_root)
-        if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
-            paths = _ws_cfg.validation.check_language_ignore_paths  # type: ignore[union-attr]
-            if paths:
-                return list(paths)
-    except Exception:
-        pass
+    Returns an empty list when the workspace config is absent or has no
+    ignore_paths setting.  Raises ValueError if the config file cannot be
+    parsed.
+    """
+    from ..utils.context import get_context
+    from ..utils.workspace import find_workspace_config
+
+    ctx = get_context()
+    if ctx is None:
+        return []
+    _ws_cfg, _ws_err = find_workspace_config(ctx.project_root)
+    if _ws_err:
+        raise ValueError(f"Workspace config error: {_ws_err}")
+    if _ws_cfg is not None and _ws_cfg.validation is not None:  # type: ignore[union-attr]
+        patterns = getattr(_ws_cfg.validation, "ignore_paths", None)
+        if patterns:
+            return list(patterns)
     return []
 
 
@@ -203,7 +215,7 @@ def _default_roots() -> List[Path]:
         ctx = get_context()
         if ctx is not None:
             return [ctx.project_root / "architecture"]
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError, RuntimeError):
         pass
     return [Path.cwd() / "architecture"]
 
@@ -218,10 +230,13 @@ def _count_md_files(roots: List[Path]) -> int:
             count += sum(1 for _ in root.rglob("*.md"))
     return count
 
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-helpers
+
 
 # ---------------------------------------------------------------------------
 # Human formatter
 # ---------------------------------------------------------------------------
+# @cpt-begin:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-human-result
 
 def _human_result(data: dict, quiet: bool = False) -> None:
     status = data.get("status", "")
@@ -266,12 +281,6 @@ def _human_result(data: dict, quiet: bool = False) -> None:
         "  [validation]\n"
         "  allowed_content_languages = [\"en\", \"ru\"]"
     )
-    ui.hint(
-        "To ignore specific paths (e.g. translation specs), use --exclude or add to config:\n"
-        "  [validation]\n"
-        "  check_language_ignore_paths = [\"translations/**\", \"specs/i18n/*.md\"]\n"
-        "To ignore a single file, add  <!-- cpt-lang: ignore -->  anywhere in the file."
-    )
-    if data.get("ignore_globs"):
-        ui.detail("Active ignore globs", ", ".join(data["ignore_globs"]))
     ui.blank()
+
+# @cpt-end:cpt-cypilot-flow-traceability-validation-check-language:p1:inst-human-result

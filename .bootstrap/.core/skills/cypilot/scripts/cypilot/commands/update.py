@@ -640,7 +640,6 @@ def _remove_system_from_core_toml(config_dir: Path) -> bool:
         return False
 
     try:
-
         with open(core_toml, "rb") as f:
             data = tomllib.load(f)
     except (OSError, ValueError) as exc:
@@ -687,7 +686,6 @@ def _deduplicate_legacy_kits(config_dir: Path) -> Dict[str, str]:
         return {}
 
     try:
-
         with open(core_toml, "rb") as f:
             data = tomllib.load(f)
     except (OSError, ValueError):
@@ -773,7 +771,6 @@ def _migrate_kit_sources(config_dir: Path) -> Dict[str, str]:
         return {}
 
     try:
-
         with open(core_toml, "rb") as f:
             data = tomllib.load(f)
     except (OSError, ValueError):

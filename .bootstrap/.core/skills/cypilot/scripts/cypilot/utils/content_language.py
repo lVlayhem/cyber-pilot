@@ -7,18 +7,20 @@ workspace config) and the standalone `cpt check-language` command.
 Language policy is configured via a list of language codes such as ["en"] or
 ["en", "ru"].  Each code maps to one or more Unicode block ranges; characters
 outside all allowed ranges are flagged as violations.
-"""
 
-import fnmatch
+@cpt-algo:cpt-cypilot-algo-traceability-validation-lang-scan:p1
+"""
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-lang-scan-imports
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-lang-scan-imports
 
 # ---------------------------------------------------------------------------
 # Unicode script ranges — maps language code → list of (start, end) inclusive
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-script-ranges
 SCRIPT_RANGES: Dict[str, List[Tuple[int, int]]] = {
     # Latin (Basic + Extended + Supplement) — always required for English
     "en": [
@@ -98,22 +100,27 @@ SCRIPT_RANGES: Dict[str, List[Tuple[int, int]]] = {
         (0xFB13, 0xFB17),   # Armenian Ligatures
     ],
 }
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-script-ranges
 
 # Language codes that are recognized by this module.
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-supported-langs
 SUPPORTED_LANGUAGES: List[str] = sorted(SCRIPT_RANGES.keys())
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-supported-langs
 
 # Always-allowed: emoji and zero-width / directional markers that are
 # language-neutral and widely used in Markdown.
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-common-ranges
 _COMMON_RANGES: List[Tuple[int, int]] = [
     (0x1F300, 0x1F9FF),  # Emoji (common in Markdown ✅ 🔥)
     (0x200B, 0x200F),    # Zero-width / directional markers
     (0xFEFF, 0xFEFF),    # BOM
 ]
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-common-ranges
 
 # ---------------------------------------------------------------------------
 # Structural line filters — these lines are always skipped to reduce noise
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-skip-patterns
 # Fenced code blocks: lines between ``` or ~~~ are skipped entirely.
 _FENCE_START: re.Pattern = re.compile(r"^\s*(`{3,}|~{3,})")
 
@@ -123,16 +130,12 @@ _SKIP_LINE_PATTERNS: List[re.Pattern] = [
     re.compile(r"^\s*\|.*`cpt-.*`"),    # Traceability ID table rows
     re.compile(r"^\s*@cpt"),            # Cypilot markers (@cpt-begin, etc.)
 ]
-
-# Per-file opt-out marker: if any line in the file contains this, the whole
-# file is skipped.  Intended for translation specs and similar files that
-# intentionally contain multi-script content.
-_FILE_IGNORE_MARKER: re.Pattern = re.compile(r"<!--\s*cpt-lang:\s*ignore\s*-->")
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-skip-patterns
 
 # ---------------------------------------------------------------------------
 # Violation
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-violation-datamodel
 
 class LangScanError(Exception):
     """Raised when a file cannot be read for language scanning."""
@@ -161,13 +164,35 @@ class LangViolation:
         s = self.line.strip()
         return s[:limit] + ("…" if len(s) > limit else "")
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-violation-datamodel
+
 # ---------------------------------------------------------------------------
 # Range helpers
 # ---------------------------------------------------------------------------
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-range-helpers
+
+def _merge_ranges(ranges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """Sort and merge overlapping or adjacent intervals.
+
+    Required so that binary search in is_allowed() works correctly when
+    ranges from different language tables overlap or are adjacent.
+    """
+    if not ranges:
+        return []
+    sorted_r = sorted(ranges, key=lambda r: r[0])
+    merged: List[Tuple[int, int]] = [sorted_r[0]]
+    for start, end in sorted_r[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end + 1:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def build_allowed_ranges(languages: List[str]) -> List[Tuple[int, int]]:
-    """Merge Unicode ranges for all given language codes into a sorted list.
+    """Merge Unicode ranges for all given language codes into a sorted,
+    non-overlapping list suitable for binary search via is_allowed().
 
     Unknown language codes are silently ignored — callers should validate
     against SUPPORTED_LANGUAGES before calling if they need strict checking.
@@ -175,7 +200,7 @@ def build_allowed_ranges(languages: List[str]) -> List[Tuple[int, int]]:
     ranges: List[Tuple[int, int]] = list(_COMMON_RANGES)
     for lang in languages:
         ranges.extend(SCRIPT_RANGES.get(lang.lower(), []))
-    return sorted(ranges, key=lambda r: r[0])
+    return _merge_ranges(ranges)
 
 
 def is_allowed(cp: int, ranges: List[Tuple[int, int]]) -> bool:
@@ -192,10 +217,12 @@ def is_allowed(cp: int, ranges: List[Tuple[int, int]]) -> bool:
             lo = mid + 1
     return False
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-range-helpers
+
 # ---------------------------------------------------------------------------
 # Scanning
 # ---------------------------------------------------------------------------
-
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-file
 
 def scan_file(
     path: Path,
@@ -205,10 +232,6 @@ def scan_file(
 
     Fenced code blocks (``` / ~~~) and structural lines (HTML comments,
     traceability table rows, @cpt markers) are automatically skipped.
-
-    If the file contains ``<!-- cpt-lang: ignore -->`` anywhere, it is skipped
-    entirely — intended for translation specs and similar files that
-    intentionally contain multi-script content.
     """
     violations: List[LangViolation] = []
     in_fence = False
@@ -217,9 +240,6 @@ def scan_file(
         text = path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError) as exc:
         raise LangScanError(path, exc) from exc
-
-    if _FILE_IGNORE_MARKER.search(text):
-        return []
 
     for lineno, raw_line in enumerate(text.splitlines(), start=1):
         if _FENCE_START.match(raw_line):
@@ -245,50 +265,46 @@ def scan_file(
 
     return violations
 
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-file
 
+# @cpt-begin:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-paths
 def scan_paths(
     roots: List[Path],
     allowed_ranges: List[Tuple[int, int]],
     extensions: Optional[List[str]] = None,
-    ignore_globs: Optional[List[str]] = None,
+    ignore_patterns: Optional[List[str]] = None,
 ) -> List[LangViolation]:
     """Recursively scan files under the given paths and return all violations.
 
     Only files whose extensions appear in *extensions* are scanned (default:
-    ``[".md"]``).
-
-    *ignore_globs* is an optional list of glob patterns (e.g.
-    ``["translations/**", "specs/i18n/*.md"]``).  Any candidate file whose
-    path (relative to its scan root, or as an absolute POSIX string) matches
-    one of these patterns is skipped entirely.  This is the path-level ignore
-    mechanism; for per-file opt-out use ``<!-- cpt-lang: ignore -->`` inside
-    the file.
+    ``[".md"]``).  Files whose path matches any glob in *ignore_patterns*
+    (matched against the absolute path string) are skipped — useful for
+    translation specs, language-processor test fixtures, or vendor docs.
     """
+    import fnmatch
+
     if extensions is None:
         extensions = [".md"]
     ext_set = {e.lower() for e in extensions}
-    globs = ignore_globs or []
+    ignore_list = list(ignore_patterns) if ignore_patterns else []
     all_violations: List[LangViolation] = []
 
-    def _is_ignored(file_path: Path, root: Path) -> bool:
-        if not globs:
-            return False
-        try:
-            rel = file_path.relative_to(root).as_posix()
-        except ValueError:
-            rel = file_path.as_posix()
-        return any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(file_path.as_posix(), g) for g in globs)
+    def _is_ignored(file_path: Path) -> bool:
+        path_str = str(file_path)
+        return any(fnmatch.fnmatch(path_str, pat) for pat in ignore_list)
 
     for root in roots:
         if root.is_file():
-            if root.suffix.lower() in ext_set and not _is_ignored(root, root.parent):
+            if root.suffix.lower() in ext_set and not _is_ignored(root):
                 all_violations.extend(scan_file(root, allowed_ranges))
         elif root.is_dir():
             for file_path in sorted(root.rglob("*")):
-                if file_path.suffix.lower() in ext_set and not _is_ignored(file_path, root):
+                if file_path.suffix.lower() in ext_set and not _is_ignored(file_path):
                     all_violations.extend(scan_file(file_path, allowed_ranges))
 
     return all_violations
+
+# @cpt-end:cpt-cypilot-algo-traceability-validation-lang-scan:p1:inst-scan-paths
 
 
 __all__ = [

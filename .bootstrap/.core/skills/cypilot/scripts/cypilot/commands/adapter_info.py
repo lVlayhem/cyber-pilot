@@ -34,7 +34,6 @@ def _load_json_file(path: Path) -> Optional[dict]:
 def _read_kit_conf(conf_path: Path) -> dict:
     """Read kit conf.toml and return key fields."""
     try:
-
         with open(conf_path, "rb") as f:
             data = tomllib.load(f)
         out: dict = {}
@@ -108,7 +107,6 @@ def cmd_adapter_info(argv: list[str]) -> int:
     registry = _load_json_file(registry_path) if registry_path.suffix == ".json" else None
     if registry is None and registry_path.suffix == ".toml" and registry_path.is_file():
         try:
-
             with open(registry_path, "rb") as f:
                 registry = tomllib.load(f)
         except (OSError, ValueError):

@@ -247,3 +247,12 @@ details = """\
 - **Project extensibility fixes** — worktree boundary detection, master-layer source trust, and `append_file` support for multi-layer pipelines
 - **Architecture docs** — consolidated agent integration model with shared skill stubs; documented project extensibility / workspace federation relationship\
 """
+
+["v3.7.0-beta"]
+summary = "Language validation, Python compatibility improvements, and documentation refresh"
+details = """\
+- **`cpt check-language` and `LANG001` validation** — added a dedicated command for scanning Markdown artifacts for disallowed Unicode scripts, with workspace-configured allowed languages and CLI overrides
+- **Analyze workflow language gate with ignore patterns** — `analyze` now runs `check-language` when content-language validation is configured, and both the workflow and scanner support ignore patterns for files that should be excluded
+- **Validation hardening and error visibility** — workspace config errors, unknown language codes, and TOML helper issues now surface explicitly instead of being silently skipped; related tests and traceability/spec markers were added
+- **Python <3.11 TOML compatibility** — added a shared `_tomllib_compat.py` shim and updated whatsnew / update-related code paths to use it, so core update and whatsnew flows work on older supported Python runtimes
+"""

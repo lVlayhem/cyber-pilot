@@ -334,7 +334,6 @@ def cmd_resolve_vars(argv: list[str]) -> int:
     ]:
         if cp.is_file():
             try:
-
                 with open(cp, "rb") as f:
                     core_data = tomllib.load(f)
             except (tomllib.TOMLDecodeError, OSError) as exc:
